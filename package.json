@@ -1,0 +1,60 @@
+{
+  "name": "hades-outreach",
+  "version": "1.0.0",
+  "description": "Automated lead generation and outreach system for WellBuiltWeb AI receptionist service",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "node test.js",
+    "test:apollo": "node test/apollo-test.js",
+    "test:clay": "node test/clay-test.js",
+    "test:instantly": "node test/instantly-test.js",
+    "cron": "node cron.js",
+    "batch": "node scripts/run-batch.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.3.1",
+    "winston": "^3.11.0",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "apollo",
+    "clay",
+    "instantly",
+    "lead-generation",
+    "outreach",
+    "automation",
+    "crm",
+    "ai-receptionist"
+  ],
+  "author": "WellBuiltWeb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wellbuiltweb/hades-outreach.git"
+  },
+  "railway": {
+    "build": {
+      "command": "npm install"
+    },
+    "start": {
+      "command": "npm start"
+    }
+  },
+  "environment": {
+    "APOLLO_API_KEY": "required",
+    "CLAY_API_KEY": "required", 
+    "INSTANTLY_API_KEY": "required",
+    "NODE_ENV": "production"
+  }
+}
