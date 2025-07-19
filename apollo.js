@@ -333,7 +333,9 @@ export class ApolloLeadPuller {
         // Complex care services (high liability/implementation complexity)
         'care services', 'healthcare', 'home care', 'senior care', 'care',
         // Manufacturing/industrial (too complex for AI receptionist)
-        'manufacturing', 'industrial', 'fabrication', 'production'
+        'manufacturing', 'industrial', 'fabrication', 'production',
+        // Specialized/hazardous cleaning (requires human expertise)
+        'biohazard', 'trauma cleaning', 'death cleaning', 'crime scene', 'hazmat'
       ];
       
       if (excludeCompanyTypes.some(type => companyName.includes(type))) {
