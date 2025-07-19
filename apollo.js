@@ -212,8 +212,8 @@ export class ApolloLeadPuller {
         "5567cd4d74686d4c59162567"  // Retail
       ],
 
-      // REVENUE FILTER (optional - under $10M)
-      organization_annual_revenue_ranges: ["$0", "$1M", "$10M"],
+      // REVENUE FILTER (optional - under $10M) - Removed as format may be incorrect
+      // organization_annual_revenue_ranges: ["$0", "$1M", "$10M"],
 
       // CONTACT LEVEL TARGETING
       person_titles: [
@@ -237,16 +237,9 @@ export class ApolloLeadPuller {
         "Five9", "Genesys", "Twilio Flex"
       ],
 
-      // INTENT DATA (if available)
-      buyer_intent_strength_score: 50, // Minimum intent score
-      intent_topics: [
-        "call center automation",
-        "virtual receptionist", 
-        "appointment scheduling",
-        "missed calls",
-        "phone answering service",
-        "customer service automation"
-      ],
+      // INTENT DATA (removed - may not be available for small markets)
+      // buyer_intent_strength_score: 50,
+      // intent_topics: [...],
 
       // DATA QUALITY REQUIREMENTS
       email_status: ["verified"],
