@@ -1,4 +1,11 @@
-import axios from 'axios';
+/**
+ * Apollo API Authentication Setup
+ * Add this to your .env file:
+ * APOLLO_API_KEY=your_apollo_api_key_here
+ * 
+ * Cron Schedule for Railway:
+ * Every Sunday at 8 PM Central: "0 20 * * 0"
+ */import axios from 'axios';
 
 export class ApolloLeadPuller {
   constructor(apiKey) {
@@ -211,7 +218,6 @@ export class ApolloLeadPuller {
         "1761", // Roofing, siding, and sheet metal contractors
         "7231", // Beauty salons
         "7297", // Massage parlors and spas
-        "5812", // Eating establishments (restaurants)
         "8021", // Dental offices and clinics
         "8111"  // Legal services (law firms)
       ],
@@ -289,6 +295,10 @@ export class ApolloLeadPuller {
       // Apply WellBuiltWeb specific quality filters
       leads = this.filterWellBuiltWebLeads(leads);
       console.log(`🎯 Qualified leads after filtering: ${leads.length}`);
+
+      // Filter out previously contacted leads (when we add this later)
+      leads = await filterAlreadyContacted(leads);
+      console.log(`🆕 New leads (excluding duplicates): ${leads.length}`);
 
       // Log summary for weekly report
       this.logWeeklyBatchSummary(leads);
@@ -444,10 +454,44 @@ export async function runWellBuiltWebBatch() {
 }
 
 /**
- * Apollo API Authentication Setup
- * Add this to your .env file:
- * APOLLO_API_KEY=your_apollo_api_key_here
- * 
- * Cron Schedule for Railway:
- * Every Sunday at 8 PM Central: "0 20 * * 0"
+ * Simple deduplication tracking using a JSON file
+ * In production, you'd use a proper database
  */
+
+// Track contacted emails to prevent duplicates
+const CONTACTED_EMAILS_FILE = 'contacted_emails.json';
+
+async function loadContactedEmails() {
+  try {
+    // In Railway, use environment variable for storage or a simple JSON approach
+    // For now, keep it in memory (resets on restart - which is actually good for testing)
+    return global.contactedEmails || new Set();
+  } catch (error) {
+    return new Set();
+  }
+}
+
+async function saveContactedEmails(newEmails) {
+  try {
+    const contactedEmails = await loadContactedEmails();
+    newEmails.forEach(email => contactedEmails.add(email.toLowerCase()));
+    global.contactedEmails = contactedEmails;
+    console.log(`📝 Tracking ${contactedEmails.size} total contacted emails`);
+  } catch (error) {
+    console.error('⚠️ Could not save contacted emails:', error.message);
+  }
+}
+
+async function filterAlreadyContacted(leads) {
+  const contactedEmails = await loadContactedEmails();
+  const newLeads = leads.filter(lead => 
+    !contactedEmails.has(lead.email.toLowerCase())
+  );
+  
+  const duplicateCount = leads.length - newLeads.length;
+  if (duplicateCount > 0) {
+    console.log(`🔄 Filtered out ${duplicateCount} previously contacted leads`);
+  }
+  
+  return newLeads;
+}
