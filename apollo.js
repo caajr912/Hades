@@ -203,10 +203,17 @@ export class ApolloLeadPuller {
       organization_num_employees_ranges: ["5,10", "11,50"],
       organization_locations: ["Louisiana"],
 
-      // INDUSTRY TARGETING - Simple businesses with straightforward AI receptionist needs
-      organization_keywords: [
-        "auto repair", "hvac", "plumbing", "electrical", "roofing",
-        "salon", "spa", "restaurant", "dental office", "law firm"
+      // INDUSTRY TARGETING - Use precise SIC codes instead of keywords
+      organization_sic_codes: [
+        "7538", // Auto repair shops and services
+        "1711", // Plumbing, heating, air-conditioning contractors  
+        "1731", // Electrical contractors
+        "1761", // Roofing, siding, and sheet metal contractors
+        "7231", // Beauty salons
+        "7297", // Massage parlors and spas
+        "5812", // Eating establishments (restaurants)
+        "8021", // Dental offices and clinics
+        "8111"  // Legal services (law firms)
       ],
 
       // CONTACT LEVEL TARGETING
