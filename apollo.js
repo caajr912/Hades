@@ -157,7 +157,7 @@ export class ApolloLeadPuller {
     try {
       while (allLeads.length < totalLimit) {
         const remaining = totalLimit - allLeads.length;
-        const pageSize = Math.min(remaining, perPage);
+        const pageSize = Math.min(remaining, 100); // Apollo max is 100
 
         const response = await this.client.post('/mixed_people/search', {
           ...criteria,
@@ -267,16 +267,16 @@ export class ApolloLeadPuller {
   /**
    * Get the complete Apollo API request body for WellBuiltWeb leads
    * @param {number} page - Page number for pagination
-   * @param {number} perPage - Leads per page (max 200)
+   * @param {number} perPage - Leads per page (max 100 for Apollo)
    * @returns {Object} Complete Apollo API request body
    */
-  static getWellBuiltWebSearchBody(page = 1, perPage = 200) {
+  static getWellBuiltWebSearchBody(page = 1, perPage = 100) {
     const criteria = ApolloLeadPuller.getWellBuiltWebCriteria();
     
     return {
-      // Pagination
+      // Pagination - Apollo max is 100 per page
       page: page,
-      per_page: Math.min(perPage, 200),
+      per_page: Math.min(perPage, 100),
       
       // Core search criteria
       ...criteria,
@@ -294,7 +294,7 @@ export class ApolloLeadPuller {
    * Weekly batch job specification for WellBuiltWeb
    * Runs every Sunday at 8 PM Central Time
    */
-  async getWeeklyLeadBatch(batchSize = 200) {
+  async getWeeklyLeadBatch(batchSize = 100) {
     console.log('🎯 Starting WellBuiltWeb weekly lead pull...');
     console.log(`📅 Target: ${batchSize} high-quality AI receptionist prospects`);
     
@@ -419,7 +419,7 @@ export async function runWellBuiltWebBatch() {
     console.log('📅 Target: Small businesses needing phone coverage (5-50 employees)');
     
     // Get this week's batch of leads
-    const leads = await apollo.getWeeklyLeadBatch(200);
+    const leads = await apollo.getWeeklyLeadBatch(100);
     
     if (leads.length === 0) {
       console.log('⚠️ No qualified leads found this week');
