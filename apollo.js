@@ -198,41 +198,54 @@ export class ApolloLeadPuller {
    * Target: Small businesses (5-50 employees) needing phone coverage
    */
   static getWellBuiltWebCriteria() {
-  return {
-    // FIRMOGRAPHICS
-    organization_num_employees_ranges: ["5,10", "11,50"],
-    organization_locations: ["Louisiana"],
+    return {
+      // FIRMOGRAPHICS
+      organization_num_employees_ranges: ["5,10", "11,50"],
+      organization_locations: ["Louisiana"],
 
-    // INDUSTRY TARGETING - Use keywords instead of deprecated tag IDs
-    organization_keywords: [
-      "professional services", "healthcare", "medical", "legal", 
-      "law firm", "attorney", "home services", "construction", 
-      "retail", "restaurant", "clinic", "dental"
-    ],
+      // INDUSTRY TARGETING - Focus on businesses that struggle with phone coverage
+      organization_keywords: [
+        // Healthcare (high phone volume, appointment-based)
+        "medical practice", "dental office", "veterinary", "physical therapy", 
+        "chiropractic", "urgent care", "family practice", "clinic",
+        
+        // Professional Services (appointment-based, client calls)
+        "law firm", "attorney", "accounting", "tax preparation", 
+        "real estate", "insurance agency", "financial advisor",
+        
+        // Home Services (field-based workers who miss calls)
+        "hvac", "plumbing", "electrical", "roofing", "landscaping",
+        "pest control", "cleaning service", "handyman", "contractor",
+        
+        // Local Services (small operations, high call volume)
+        "auto repair", "salon", "spa", "restaurant", "retail store",
+        "fitness center", "daycare", "tutoring"
+      ],
 
-    // CONTACT LEVEL TARGETING
-    person_titles: [
-      "Owner", "CEO", "Founder", "President",
-      "Office Manager", "Operations Manager", "Practice Manager", 
-      "General Manager", "Business Manager",
-      "Practice Administrator", "Clinic Manager", "Office Administrator"
-    ],
+      // CONTACT LEVEL TARGETING
+      person_titles: [
+        "Owner", "CEO", "Founder", "President",
+        "Office Manager", "Operations Manager", "Practice Manager", 
+        "General Manager", "Business Manager",
+        "Practice Administrator", "Clinic Manager", "Office Administrator"
+      ],
 
-    person_seniorities: [
-      "c_suite", "vp", "director", "manager", "owner"
-    ],
+      person_seniorities: [
+        "c_suite", "vp", "director", "manager", "owner"
+      ],
 
-    // DATA QUALITY REQUIREMENTS
-    email_status: ["verified"],
-    phone_status: ["verified"],
-    
-    // LOCATION SPECIFICITY
-    person_locations: ["Louisiana", "Lafayette, Louisiana"],
+      // DATA QUALITY REQUIREMENTS
+      email_status: ["verified"],
+      phone_status: ["verified"],
+      
+      // LOCATION SPECIFICITY
+      person_locations: ["Louisiana", "Lafayette, Louisiana"],
 
-    // Additional filters for lead quality
-    prospected_by_current_team: ["no"]
-  };
-}
+      // Additional filters for lead quality
+      prospected_by_current_team: ["no"]
+    };
+  }
+
   /**
    * Get the complete Apollo API request body for WellBuiltWeb leads
    * @param {number} page - Page number for pagination
@@ -329,6 +342,7 @@ export class ApolloLeadPuller {
       return true;
     });
   }
+
   /**
    * Log summary of weekly batch for reporting
    */
