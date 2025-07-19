@@ -329,7 +329,9 @@ export class ApolloLeadPuller {
         'government', 'municipal', 'state of', 'city of', 'parish of',
         'university', 'college', 'school district', 'hospital system',
         // Large corporate/tech
-        'corporation', 'enterprises', 'technologies', 'solutions inc'
+        'corporation', 'enterprises', 'technologies', 'solutions inc',
+        // Complex care services (high liability/implementation complexity)
+        'care services', 'healthcare', 'home care', 'senior care', 'care'
       ];
       
       if (excludeCompanyTypes.some(type => companyName.includes(type))) {
