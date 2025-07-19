@@ -304,11 +304,6 @@ export class ApolloLeadPuller {
         return false;
       }
 
-      // Must have phone number
-      if (!lead.phone_numbers?.length) {
-        return false;
-      }
-
       // Filter out generic emails
       const email = lead.email.toLowerCase();
       const genericEmails = ['info@', 'contact@', 'hello@', 'support@', 'admin@', 'sales@'];
@@ -316,18 +311,7 @@ export class ApolloLeadPuller {
         return false;
       }
 
-      // Must be decision maker level
-      const title = (lead.title || '').toLowerCase();
-      const decisionMakerKeywords = [
-        'owner', 'ceo', 'founder', 'president', 'manager', 'director', 
-        'administrator', 'practice', 'office', 'operations'
-      ];
-      
-      if (!decisionMakerKeywords.some(keyword => title.includes(keyword))) {
-        return false;
-      }
-
-      // Company size validation (5-50 employees)
+      // Company size validation (5-50 employees) - only if data exists
       const empCount = lead.organization?.estimated_num_employees;
       if (empCount && (empCount < 5 || empCount > 50)) {
         return false;
@@ -345,7 +329,6 @@ export class ApolloLeadPuller {
       return true;
     });
   }
-
   /**
    * Log summary of weekly batch for reporting
    */
