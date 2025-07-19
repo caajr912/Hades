@@ -282,11 +282,10 @@ export class ApolloLeadPuller {
       ...criteria,
       
       // Additional filters for lead quality
-      prospected_by_current_team: ["no"], // Haven't been contacted by us
+      prospected_by_current_team: ["no"] // Haven't been contacted by us
       
-      // Sort by relevance/intent score if available
-      sort_by_field: "relevance",
-      sort_ascending: false
+      // Note: Removed sort_by_field as Apollo doesn't support "relevance"
+      // Results will be returned in Apollo's default order
     };
   }
 
