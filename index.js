@@ -51,5 +51,27 @@ async function debugLouisianaSearch() {
     };
     
     const response4 = await apollo.client.post('/mixed_people/search', titleSearch);
-    console.lo
+    console.log(`TEST 4: Basic titles: ${response4.data.people?.length || 0} results`);
+  } catch (error) {
+    console.log(`TEST 4: Basic titles FAILED:`, error.response?.data || error.message);
+  }
+
+  // Test 5: Check organization keywords
+  try {
+    const keywordSearch = {
+      page: 1,
+      per_page: 10,
+      person_locations: ["Louisiana"],
+      organization_keywords: ["healthcare", "legal"]
+    };
     
+    const response5 = await apollo.client.post('/mixed_people/search', keywordSearch);
+    console.log(`TEST 5: Organization keywords: ${response5.data.people?.length || 0} results`);
+  } catch (error) {
+    console.log(`TEST 5: Organization keywords FAILED:`, error.response?.data || error.message);
+  }
+
+  console.log('\n🔍 Debug complete! We can see which filters are too restrictive.');
+}
+
+debugLouisianaSearch().catch(console.error);
