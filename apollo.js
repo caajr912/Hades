@@ -330,11 +330,21 @@ export class ApolloLeadPuller {
         return false;
       }
 
-      // Exclude if company name suggests they're already a phone service
+      // Exclude organizations that don't need AI receptionists
       const companyName = (lead.organization?.name || '').toLowerCase();
       const excludeCompanyTypes = [
-        'answering', 'call center', 'virtual assistant', 'receptionist service'
+        // Direct competitors
+        'answering', 'call center', 'virtual assistant', 'receptionist service',
+        // Organizations/associations (not target businesses)
+        'association', 'chamber of commerce', 'trade association', 'nonprofit',
+        'foundation', 'institute', 'federation', 'alliance', 'council',
+        // Government/large entities
+        'government', 'municipal', 'state of', 'city of', 'parish of',
+        'university', 'college', 'school district', 'hospital system',
+        // Large corporate/tech
+        'corporation', 'enterprises', 'technologies', 'solutions inc'
       ];
+      
       if (excludeCompanyTypes.some(type => companyName.includes(type))) {
         return false;
       }
