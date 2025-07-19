@@ -203,23 +203,10 @@ export class ApolloLeadPuller {
       organization_num_employees_ranges: ["5,10", "11,50"],
       organization_locations: ["Louisiana"],
 
-      // INDUSTRY TARGETING - Focus on businesses that struggle with phone coverage
+      // INDUSTRY TARGETING - Simple businesses with straightforward AI receptionist needs
       organization_keywords: [
-        // Healthcare (high phone volume, appointment-based)
-        "medical practice", "dental office", "veterinary", "physical therapy", 
-        "chiropractic", "urgent care", "family practice", "clinic",
-        
-        // Professional Services (appointment-based, client calls)
-        "law firm", "attorney", "accounting", "tax preparation", 
-        "real estate", "insurance agency", "financial advisor",
-        
-        // Home Services (field-based workers who miss calls)
-        "hvac", "plumbing", "electrical", "roofing", "landscaping",
-        "pest control", "cleaning service", "handyman", "contractor",
-        
-        // Local Services (small operations, high call volume)
-        "auto repair", "salon", "spa", "restaurant", "retail store",
-        "fitness center", "daycare", "tutoring"
+        "auto repair", "hvac", "plumbing", "electrical", "roofing",
+        "salon", "spa", "restaurant", "dental office", "law firm"
       ],
 
       // CONTACT LEVEL TARGETING
