@@ -3,75 +3,56 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-async function debugLouisianaSearch() {
+async function debugCombinedFilters() {
   const apollo = new ApolloLeadPuller(process.env.APOLLO_API_KEY);
   
-  console.log('🔍 Debugging Louisiana search filters...\n');
+  console.log('🔍 Testing COMBINED filters...\n');
 
-  // Test 1: Basic Louisiana ✅ (we know this works)
-  console.log('TEST 1: ✅ Basic Louisiana: 10 results\n');
-
-  // Test 2: Add company size
+  // Test 1: Size + Email
   try {
-    const sizeSearch = {
+    const test1 = {
       page: 1,
       per_page: 10,
       person_locations: ["Louisiana"],
-      organization_num_employees_ranges: ["5,10", "11,50"]
-    };
-    
-    const response2 = await apollo.client.post('/mixed_people/search', sizeSearch);
-    console.log(`TEST 2: Company size (5-50): ${response2.data.people?.length || 0} results`);
-  } catch (error) {
-    console.log(`TEST 2: Company size FAILED:`, error.response?.data || error.message);
-  }
-
-  // Test 3: Add verified email
-  try {
-    const emailSearch = {
-      page: 1,
-      per_page: 10,
-      person_locations: ["Louisiana"],
+      organization_num_employees_ranges: ["5,10", "11,50"],
       email_status: ["verified"]
     };
     
-    const response3 = await apollo.client.post('/mixed_people/search', emailSearch);
-    console.log(`TEST 3: Verified email: ${response3.data.people?.length || 0} results`);
+    const response1 = await apollo.client.post('/mixed_people/search', test1);
+    console.log(`TEST 1: Size + Email: ${response1.data.people?.length || 0} results`);
   } catch (error) {
-    console.log(`TEST 3: Verified email FAILED:`, error.response?.data || error.message);
+    console.log(`TEST 1 FAILED:`, error.response?.data || error.message);
   }
 
-  // Test 4: Add titles
+  // Test 2: Size + Email + Titles
   try {
-    const titleSearch = {
+    const test2 = {
       page: 1,
       per_page: 10,
       person_locations: ["Louisiana"],
+      organization_num_employees_ranges: ["5,10", "11,50"],
+      email_status: ["verified"],
       person_titles: ["Owner", "CEO", "Manager"]
     };
     
-    const response4 = await apollo.client.post('/mixed_people/search', titleSearch);
-    console.log(`TEST 4: Basic titles: ${response4.data.people?.length || 0} results`);
+    const response2 = await apollo.client.post('/mixed_people/search', test2);
+    console.log(`TEST 2: Size + Email + Titles: ${response2.data.people?.length || 0} results`);
   } catch (error) {
-    console.log(`TEST 4: Basic titles FAILED:`, error.response?.data || error.message);
+    console.log(`TEST 2 FAILED:`, error.response?.data || error.message);
   }
 
-  // Test 5: Check organization keywords
+  // Test 3: Your FULL WellBuiltWeb criteria
   try {
-    const keywordSearch = {
-      page: 1,
-      per_page: 10,
-      person_locations: ["Louisiana"],
-      organization_keywords: ["healthcare", "legal"]
-    };
+    const fullCriteria = apollo.constructor.getWellBuiltWebSearchBody(1, 10);
     
-    const response5 = await apollo.client.post('/mixed_people/search', keywordSearch);
-    console.log(`TEST 5: Organization keywords: ${response5.data.people?.length || 0} results`);
+    const response3 = await apollo.client.post('/mixed_people/search', fullCriteria);
+    console.log(`TEST 3: FULL WellBuiltWeb criteria: ${response3.data.people?.length || 0} results`);
+    console.log('Full criteria:', JSON.stringify(fullCriteria, null, 2));
   } catch (error) {
-    console.log(`TEST 5: Organization keywords FAILED:`, error.response?.data || error.message);
+    console.log(`TEST 3 FAILED:`, error.response?.data || error.message);
   }
 
-  console.log('\n🔍 Debug complete! We can see which filters are too restrictive.');
+  console.log('\n🔍 Now we know where the issue is!');
 }
 
-debugLouisianaSearch().catch(console.error);
+debugCombinedFilters().catch(console.error);
