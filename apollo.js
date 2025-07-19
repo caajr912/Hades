@@ -198,65 +198,41 @@ export class ApolloLeadPuller {
    * Target: Small businesses (5-50 employees) needing phone coverage
    */
   static getWellBuiltWebCriteria() {
-    return {
-      // FIRMOGRAPHICS
-      organization_num_employees_ranges: ["5,10", "11,50"], // 5-50 employees
-      organization_locations: ["Louisiana"], // Louisiana only
-      
-      // TOP TARGET INDUSTRIES for AI receptionist
-      organization_industry_tag_ids: [
-        "5567cd4d74686d4c5916256d", // Professional Services
-        "5567cd4e74686d6578220242", // Healthcare & Medical
-        "5567cd4d74686d4c59162563", // Legal Services
-        "5567cd4e74686d5f94220235", // Home Services/Construction
-        "5567cd4d74686d4c59162567"  // Retail
-      ],
+  return {
+    // FIRMOGRAPHICS
+    organization_num_employees_ranges: ["5,10", "11,50"],
+    organization_locations: ["Louisiana"],
 
-      // REVENUE FILTER (optional - under $10M) - Removed as format may be incorrect
-      // organization_annual_revenue_ranges: ["$0", "$1M", "$10M"],
+    // INDUSTRY TARGETING - Use keywords instead of deprecated tag IDs
+    organization_keywords: [
+      "professional services", "healthcare", "medical", "legal", 
+      "law firm", "attorney", "home services", "construction", 
+      "retail", "restaurant", "clinic", "dental"
+    ],
 
-      // CONTACT LEVEL TARGETING
-      person_titles: [
-        // Primary decision makers
-        "Owner", "CEO", "Founder", "President",
-        // Operations focused
-        "Office Manager", "Operations Manager", "Practice Manager", 
-        "General Manager", "Business Manager",
-        // Medical/Professional specific
-        "Practice Administrator", "Clinic Manager", "Office Administrator"
-      ],
+    // CONTACT LEVEL TARGETING
+    person_titles: [
+      "Owner", "CEO", "Founder", "President",
+      "Office Manager", "Operations Manager", "Practice Manager", 
+      "General Manager", "Business Manager",
+      "Practice Administrator", "Clinic Manager", "Office Administrator"
+    ],
 
-      person_seniorities: [
-        "c_suite", "vp", "director", "manager", "owner"
-      ],
+    person_seniorities: [
+      "c_suite", "vp", "director", "manager", "owner"
+    ],
 
-      // TECHNOGRAPHIC EXCLUSIONS (companies already using advanced call tools)
-      organization_not_technologies: [
-        "CallRail", "RingCentral", "Invoca", "DialogTech", 
-        "Marchex", "Convirza", "ResponseTap", "Infinity",
-        "Five9", "Genesys", "Twilio Flex"
-      ],
+    // DATA QUALITY REQUIREMENTS
+    email_status: ["verified"],
+    phone_status: ["verified"],
+    
+    // LOCATION SPECIFICITY
+    person_locations: ["Louisiana", "Lafayette, Louisiana"],
 
-      // INTENT DATA (removed - may not be available for small markets)
-      // buyer_intent_strength_score: 50,
-      // intent_topics: [...],
-
-      // DATA QUALITY REQUIREMENTS
-      email_status: ["verified"],
-      phone_status: ["verified"],
-      
-      // LOCATION SPECIFICITY (Louisiana focus, Lafayette area priority)
-      person_locations: ["Louisiana", "Lafayette, Louisiana"],
-      organization_locations: ["Louisiana"],
-      
-      // EXCLUDE COMPETITORS
-      organization_not_keywords: [
-        "answering service", "call center", "virtual assistant service",
-        "receptionist service", "AI phone", "chatbot company"
-      ]
-    };
-  }
-
+    // Additional filters for lead quality
+    prospected_by_current_team: ["no"]
+  };
+}
   /**
    * Get the complete Apollo API request body for WellBuiltWeb leads
    * @param {number} page - Page number for pagination
