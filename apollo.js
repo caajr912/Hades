@@ -300,10 +300,24 @@ export class ApolloLeadPuller {
       leads = await filterAlreadyContacted(leads);
       console.log(`🆕 New leads (excluding duplicates): ${leads.length}`);
 
+      if (leads.length === 0) {
+        console.log('⚠️ No new leads after filtering and deduplication');
+        return [];
+      }
+
+      // NEW: Enrich leads to get real email addresses using Apollo credits
+      console.log('\n🔓 ENRICHING LEADS FOR REAL EMAIL ADDRESSES:');
+      const enrichedLeads = await this.enrichLeadsWithEmails(leads);
+
+      if (enrichedLeads.length === 0) {
+        console.log('⚠️ No leads were successfully enriched with real emails');
+        return [];
+      }
+
       // Log summary for weekly report
-      this.logWeeklyBatchSummary(leads);
+      this.logWeeklyBatchSummary(enrichedLeads);
       
-      return leads;
+      return enrichedLeads;
 
     } catch (error) {
       console.error('❌ Weekly batch pull failed:', error.response?.data || error.message);
@@ -312,19 +326,79 @@ export class ApolloLeadPuller {
   }
 
   /**
+   * Enrich leads to get real email addresses (uses Apollo credits)
+   * @param {Array} leads - Raw leads from search
+   * @returns {Promise<Array>} Enriched leads with real emails
+   */
+  async enrichLeadsWithEmails(leads) {
+    console.log(`🔓 Enriching ${leads.length} leads to unlock real email addresses...`);
+    console.log(`💳 This will use Apollo credits (you have 2,500 available)`);
+    
+    const enrichedLeads = [];
+    let creditsUsed = 0;
+    let enrichmentFailures = 0;
+
+    for (let i = 0; i < leads.length; i++) {
+      const lead = leads[i];
+      console.log(`📧 Enriching ${i + 1}/${leads.length}: ${lead.first_name} ${lead.last_name} at ${lead.organization?.name}`);
+      
+      try {
+        // Use Apollo's People Enrichment endpoint to get real email
+        const enrichResponse = await this.client.post('/people/match', {
+          first_name: lead.first_name,
+          last_name: lead.last_name,
+          organization_name: lead.organization?.name,
+          domain: lead.organization?.website_url,
+          // Use existing Apollo ID if available for better matching
+          id: lead.id
+        });
+
+        if (enrichResponse.data && enrichResponse.data.person && enrichResponse.data.person.email) {
+          // Successfully enriched - got real email
+          const enrichedLead = {
+            ...lead,
+            email: enrichResponse.data.person.email,
+            email_status: enrichResponse.data.person.email_status,
+            phone_numbers: enrichResponse.data.person.phone_numbers || lead.phone_numbers,
+            enriched: true,
+            credits_used: 1
+          };
+          
+          enrichedLeads.push(enrichedLead);
+          creditsUsed++;
+          console.log(`✅ Real email found: ${enrichResponse.data.person.email}`);
+        } else {
+          // Enrichment didn't return email
+          console.log(`⚠️ No email found during enrichment`);
+          enrichmentFailures++;
+        }
+
+        // Rate limiting to avoid API issues
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        console.error(`❌ Enrichment failed for ${lead.first_name} ${lead.last_name}:`, error.response?.data || error.message);
+        enrichmentFailures++;
+      }
+    }
+
+    console.log(`\n🔓 ENRICHMENT SUMMARY:`);
+    console.log(`✅ Successfully enriched: ${enrichedLeads.length} leads`);
+    console.log(`❌ Enrichment failures: ${enrichmentFailures}`);
+    console.log(`💳 Apollo credits used: ${creditsUsed}`);
+    console.log(`💰 Remaining credits: ~${2500 - creditsUsed}`);
+    console.log(`📧 Success rate: ${((enrichedLeads.length / leads.length) * 100).toFixed(1)}%`);
+
+    return enrichedLeads;
+  }
+  /**
    * WellBuiltWeb specific lead quality filters
    */
   filterWellBuiltWebLeads(leads) {
     return leads.filter(lead => {
-      // Must have verified email
-      if (!lead.email || lead.email_status !== 'verified') {
-        return false;
-      }
-
-      // Filter out generic emails
-      const email = lead.email.toLowerCase();
-      const genericEmails = ['info@', 'contact@', 'hello@', 'support@', 'admin@', 'sales@'];
-      if (genericEmails.some(generic => email.includes(generic))) {
+      // Skip email verification here since we'll enrich them later
+      // Must have name and company for enrichment
+      if (!lead.first_name || !lead.last_name || !lead.organization?.name) {
         return false;
       }
 
