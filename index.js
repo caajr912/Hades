@@ -5,54 +5,47 @@ dotenv.config();
 
 async function main() {
   console.log('🔍 Debugging Instantly Integration...\n');
+  console.log('API Key exists:', !!process.env.INSTANTLY_API_KEY);
+  console.log('API Key starts with:', process.env.INSTANTLY_API_KEY?.substring(0, 10) + '...');
+
   const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
 
   try {
-    // Test 1: List campaigns to verify connection
-    console.log('TEST 1: List all campaigns');
-    const campaigns = await instantly.listCampaigns();
-    console.log(`Found ${campaigns.length} campaigns:`);
+    // Test the basic API connection
+    console.log('\nTEST 1: Testing basic API connection');
     
-    if (campaigns.length > 0) {
-      campaigns.forEach(campaign => {
-        console.log(`- ID: ${campaign.id}`);
-        console.log(`  Name: ${campaign.name}`);
-        console.log(`  Status: ${campaign.status}`);
-      });
-    }
-
-    // Test 2: Check our specific campaign
-    const campaignId = '5cf286eb-6adc-45cc-ba82-d5225f91c3a0';
-    console.log(`\nTEST 2: Looking for campaign ${campaignId}`);
-    
-    const targetCampaign = campaigns.find(c => c.id === campaignId);
-    if (targetCampaign) {
-      console.log(`✅ Found target campaign: ${targetCampaign.name}`);
-    } else {
-      console.log(`❌ Campaign ${campaignId} NOT FOUND in your account`);
-      console.log('Available campaign IDs:');
-      campaigns.forEach(c => console.log(`  - ${c.id}`));
-    }
-
-    // Test 3: Try to create a single test lead
-    console.log(`\nTEST 3: Creating a test lead`);
-    const testLead = {
-      campaign: campaignId,
-      email: 'test@example.com',
-      first_name: 'Test',
-      last_name: 'User',
-      company_name: 'Test Company'
-    };
-
     try {
+      const response = await instantly.client.get('/api/v2/campaigns');
+      console.log('✅ API Response status:', response.status);
+      console.log('✅ Response data type:', typeof response.data);
+      console.log('✅ Response data:', JSON.stringify(response.data, null, 2));
+    } catch (apiError) {
+      console.log('❌ API call failed:', apiError.response?.status);
+      console.log('❌ Error data:', apiError.response?.data);
+      console.log('❌ Error message:', apiError.message);
+    }
+
+    // Test creating a simple lead
+    console.log('\nTEST 2: Testing lead creation');
+    try {
+      const testLead = {
+        campaign: '5cf286eb-6adc-45cc-ba82-d5225f91c3a0',
+        email: 'debug-test@example.com',
+        first_name: 'Debug',
+        last_name: 'Test'
+      };
+      
       const response = await instantly.client.post('/api/v2/leads', testLead);
-      console.log('✅ Test lead created successfully:', response.data);
-    } catch (error) {
-      console.log('❌ Test lead creation failed:', error.response?.data || error.message);
+      console.log('✅ Lead creation response:', response.status);
+      console.log('✅ Lead data:', JSON.stringify(response.data, null, 2));
+    } catch (leadError) {
+      console.log('❌ Lead creation failed:', leadError.response?.status);
+      console.log('❌ Lead error data:', leadError.response?.data);
+      console.log('❌ Lead error message:', leadError.message);
     }
 
   } catch (error) {
-    console.error('❌ Debug failed:', error.response?.data || error.message);
+    console.error('❌ Debug failed:', error.message);
   }
 }
 
