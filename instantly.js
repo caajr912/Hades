@@ -3,17 +3,18 @@ import axios from 'axios';
 export class InstantlyManager {
   constructor(apiKey) {
     this.apiKey = apiKey;
-    this.baseURL = 'https://api.instantly.ai/api/v1';
+    this.baseURL = 'https://api.instantly.ai';
     this.client = axios.create({
       baseURL: this.baseURL,
       headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       }
     });
   }
 
   /**
-   * Add leads to an existing campaign
+   * Add leads to an existing campaign (API V2)
    * @param {string} campaignId - Campaign ID to add leads to
    * @param {Array} leads - Array of lead objects
    * @returns {Promise<Object>} Addition results
@@ -22,7 +23,7 @@ export class InstantlyManager {
     try {
       console.log(`📧 Adding ${leads.length} leads to Instantly campaign: ${campaignId}`);
       
-      // Format leads for Instantly API
+      // Format leads for Instantly API V2
       const formattedLeads = leads.map(lead => ({
         email: lead.email,
         first_name: lead.firstName,
@@ -34,19 +35,19 @@ export class InstantlyManager {
         city: lead.city,
         state: lead.state,
         industry: lead.industry,
-        // Custom fields for personalization
-        company_size: lead.companySize?.toString() || '',
-        apollo_id: lead.apolloId,
-        pull_date: lead.pullDate
+        // Custom variables (API V2 format)
+        custom_variables: {
+          company_size: lead.companySize?.toString() || '',
+          apollo_id: lead.apolloId,
+          pull_date: lead.pullDate
+        }
       }));
 
-      const response = await this.client.post('/campaign/add_leads', {
-        api_key: this.apiKey,
-        campaign_id: campaignId,
+      const response = await this.client.post(`/v2/campaigns/${campaignId}/leads`, {
         leads: formattedLeads
       });
 
-      if (response.data && response.data.success) {
+      if (response.data) {
         console.log(`✅ Successfully added ${formattedLeads.length} leads to campaign`);
         return {
           success: true,
@@ -56,7 +57,7 @@ export class InstantlyManager {
         };
       }
 
-      throw new Error(response.data?.message || 'Failed to add leads');
+      throw new Error('Failed to add leads');
     } catch (error) {
       console.error('❌ Adding leads failed:', error.response?.data || error.message);
       throw error;
@@ -64,24 +65,19 @@ export class InstantlyManager {
   }
 
   /**
-   * Get campaign statistics
+   * Get campaign details (API V2)
    * @param {string} campaignId - Campaign ID
-   * @returns {Promise<Object>} Campaign stats
+   * @returns {Promise<Object>} Campaign details
    */
   async getCampaignStats(campaignId) {
     try {
-      const response = await this.client.get('/campaign/get', {
-        params: {
-          api_key: this.apiKey,
-          campaign_id: campaignId
-        }
-      });
+      const response = await this.client.get(`/v2/campaigns/${campaignId}`);
 
-      if (response.data && response.data.success) {
-        return response.data.data;
+      if (response.data) {
+        return response.data;
       }
 
-      throw new Error(response.data?.message || 'Failed to get stats');
+      throw new Error('Failed to get campaign stats');
     } catch (error) {
       console.error('❌ Getting campaign stats failed:', error.response?.data || error.message);
       throw error;
@@ -89,19 +85,15 @@ export class InstantlyManager {
   }
 
   /**
-   * List all campaigns
+   * List all campaigns (API V2)
    * @returns {Promise<Array>} Array of campaigns
    */
   async listCampaigns() {
     try {
-      const response = await this.client.get('/campaign/list', {
-        params: {
-          api_key: this.apiKey
-        }
-      });
+      const response = await this.client.get('/v2/campaigns');
 
-      if (response.data && response.data.success) {
-        return response.data.data;
+      if (response.data) {
+        return response.data;
       }
 
       return [];
@@ -118,7 +110,7 @@ export class InstantlyManager {
    * @param {number} batchSize - Number of leads to add per batch
    * @returns {Promise<Object>} Results summary
    */
-  async batchAddLeads(campaignId, leads, batchSize = 50) {
+  async batchAddLeads(campaignId, leads, batchSize = 25) {
     console.log(`📊 Processing ${leads.length} leads in batches of ${batchSize}`);
     
     const results = {
@@ -173,8 +165,13 @@ export async function runWellBuiltWebOutreach(apolloLeads, campaignId = '5cf286e
     
     // Get current campaign stats (before adding new leads)
     console.log('\n📈 Getting current campaign statistics...');
-    const initialStats = await instantly.getCampaignStats(campaignId);
-    console.log(`📊 Current campaign leads: ${initialStats.total_leads || 0}`);
+    let initialStats = {};
+    try {
+      initialStats = await instantly.getCampaignStats(campaignId);
+      console.log(`📊 Current campaign: ${initialStats.name || 'Unknown'}`);
+    } catch (error) {
+      console.log(`⚠️ Could not get initial stats: ${error.message}`);
+    }
     
     // Add leads to campaign in batches
     console.log('\n📧 Adding new leads to campaign...');
@@ -182,14 +179,18 @@ export async function runWellBuiltWebOutreach(apolloLeads, campaignId = '5cf286e
     
     // Get updated campaign stats
     console.log('\n📈 Getting updated campaign statistics...');
-    const finalStats = await instantly.getCampaignStats(campaignId);
+    let finalStats = {};
+    try {
+      finalStats = await instantly.getCampaignStats(campaignId);
+    } catch (error) {
+      console.log(`⚠️ Could not get final stats: ${error.message}`);
+    }
     
     // Log comprehensive results
     console.log('\n🎯 INSTANTLY CAMPAIGN RESULTS:');
     console.log(`✅ Successfully added: ${results.successful_adds} leads`);
     console.log(`❌ Failed to add: ${results.failed_adds} leads`);
     console.log(`📦 Batches processed: ${results.batches_processed}`);
-    console.log(`📈 Campaign total leads: ${finalStats.total_leads || 'Unknown'}`);
     console.log(`📧 Success rate: ${((results.successful_adds / results.total_leads) * 100).toFixed(1)}%`);
     
     if (results.errors.length > 0) {
@@ -220,7 +221,7 @@ export async function runWellBuiltWebOutreach(apolloLeads, campaignId = '5cf286e
       leads_added: results.successful_adds,
       leads_failed: results.failed_adds,
       success_rate: ((results.successful_adds / results.total_leads) * 100).toFixed(1),
-      campaign_total: finalStats.total_leads
+      campaign_total: finalStats.total_leads || 'Unknown'
     };
 
   } catch (error) {
@@ -252,7 +253,9 @@ export async function markLeadsAsContacted(successfulLeads) {
 }
 
 /**
- * Instantly API Authentication Setup
+ * Instantly API V2 Authentication Setup
  * Add this to your .env file:
- * INSTANTLY_API_KEY=your_instantly_api_key_here
+ * INSTANTLY_API_KEY=your_instantly_api_v2_key_here
+ * 
+ * NOTE: You need a NEW API key for V2 - the old V1 keys won't work
  */
