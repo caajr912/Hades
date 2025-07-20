@@ -1,70 +1,45 @@
 import { runWellBuiltWebBatch } from './apollo.js';
-import { InstantlyManager } from './instantly.js';
+import { runWellBuiltWebOutreach, markLeadsAsContacted } from './instantly.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  console.log('🔍 Testing real lead creation...\n');
+  console.log('🔥 Hades Outreach Starting...');
+  console.log('🎯 Complete Lead Generation & Email Campaign Pipeline');
+  console.log('📍 Louisiana Focus: Building local relationships around Lafayette');
+  console.log('-------------------\n');
   
-  const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
-  const campaignId = '5cf286eb-6adc-45cc-ba82-d5225f91c3a0';
-
-  // Get one real lead from Apollo
-  const apolloLeads = await runWellBuiltWebBatch();
-  
-  if (apolloLeads.length > 0) {
-    const testLead = apolloLeads[0];
-    console.log('📄 Sample Apollo lead:', {
-      firstName: testLead.firstName,
-      email: testLead.email,
-      companyName: testLead.companyName
-    });
-
-    // Test 1: Try with all the data (like our original attempt)
-    console.log('\nTEST 1: Full lead data');
-    try {
-      const fullData = {
-        campaign: campaignId,
-        email: testLead.email,
-        first_name: testLead.firstName,
-        last_name: testLead.lastName,
-        company_name: testLead.companyName,
-        title: testLead.title,
-        phone: testLead.phone,
-        website: testLead.website,
-        city: testLead.city,
-        state: testLead.state,
-        industry: testLead.industry,
-        custom_variables: {
-          company_size: testLead.companySize?.toString() || '',
-          apollo_id: testLead.apolloId || '',
-          pull_date: testLead.pullDate || new Date().toISOString()
-        }
-      };
-
-      const response = await instantly.client.post('/api/v2/leads', fullData);
-      console.log('✅ Full data lead created:', response.data.id);
-    } catch (error) {
-      console.log('❌ Full data failed:', error.response?.data || error.message);
+  try {
+    // Step 1: Pull and enrich leads from Apollo
+    console.log('STEP 1: Apollo Lead Generation + Email Enrichment');
+    const apolloLeads = await runWellBuiltWebBatch();
+    
+    if (apolloLeads.length === 0) {
+      console.log('⚠️ No new leads found this week. Pipeline complete.');
+      return;
     }
 
-    // Test 2: Try with minimal data (like our successful test)
-    console.log('\nTEST 2: Minimal lead data');
-    try {
-      const minimalData = {
-        campaign: campaignId,
-        email: testLead.email.replace('@', '+minimal@'), // Slight variation to avoid duplicate
-        first_name: testLead.firstName,
-        last_name: testLead.lastName,
-        company_name: testLead.companyName
-      };
+    console.log(`✅ Apollo: ${apolloLeads.length} quality leads with real emails\n`);
 
-      const response = await instantly.client.post('/api/v2/leads', minimalData);
-      console.log('✅ Minimal data lead created:', response.data.id);
-    } catch (error) {
-      console.log('❌ Minimal data failed:', error.response?.data || error.message);
+    // Step 2: Add leads to Instantly email campaign
+    console.log('STEP 2: Instantly Email Campaign');
+    const instantlyResults = await runWellBuiltWebOutreach(apolloLeads);
+    
+    console.log(`✅ Instantly: ${instantlyResults.leads_added} leads added to campaign\n`);
+
+    // Step 3: Mark successfully added leads as contacted
+    if (instantlyResults.leads_added > 0) {
+      console.log('STEP 3: Lead Tracking');
+      const successfulLeads = apolloLeads.slice(0, instantlyResults.leads_added);
+      await markLeadsAsContacted(successfulLeads);
+      console.log('✅ Leads marked as contacted for future deduplication\n');
     }
+
+    console.log('🚀 EMAIL OUTREACH ACTIVE WITH REAL EMAIL ADDRESSES!');
+
+  } catch (error) {
+    console.error('❌ Pipeline failed:', error.message);
   }
 }
 
