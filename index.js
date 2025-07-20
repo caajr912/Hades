@@ -1,79 +1,59 @@
-import { runWellBuiltWebBatch } from './apollo.js';
-import { runWellBuiltWebOutreach, markLeadsAsContacted } from './instantly.js';
+import { InstantlyManager } from './instantly.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  console.log('🔥 Hades Outreach Starting...');
-  console.log('🎯 Complete Lead Generation & Email Campaign Pipeline');
-  console.log('📍 Louisiana Focus: Building local relationships around Lafayette');
-  console.log('-------------------\n');
-  
+  console.log('🔍 Debugging Instantly Integration...\n');
+  const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
+
   try {
-    // Step 1: Pull leads from Apollo
-    console.log('STEP 1: Apollo Lead Generation');
-    const apolloLeads = await runWellBuiltWebBatch();
+    // Test 1: List campaigns to verify connection
+    console.log('TEST 1: List all campaigns');
+    const campaigns = await instantly.listCampaigns();
+    console.log(`Found ${campaigns.length} campaigns:`);
     
-    if (apolloLeads.length === 0) {
-      console.log('⚠️ No new leads found this week. Pipeline complete.');
-      return;
+    if (campaigns.length > 0) {
+      campaigns.forEach(campaign => {
+        console.log(`- ID: ${campaign.id}`);
+        console.log(`  Name: ${campaign.name}`);
+        console.log(`  Status: ${campaign.status}`);
+      });
     }
 
-    console.log(`✅ Apollo: ${apolloLeads.length} quality leads pulled\n`);
-
-    // Step 2: Add leads to Instantly email campaign
-    console.log('STEP 2: Instantly Email Campaign');
-    const instantlyResults = await runWellBuiltWebOutreach(apolloLeads);
+    // Test 2: Check our specific campaign
+    const campaignId = '5cf286eb-6adc-45cc-ba82-d5225f91c3a0';
+    console.log(`\nTEST 2: Looking for campaign ${campaignId}`);
     
-    console.log(`✅ Instantly: ${instantlyResults.leads_added} leads added to campaign\n`);
-
-    // Step 3: Mark successfully added leads as contacted
-    if (instantlyResults.leads_added > 0) {
-      console.log('STEP 3: Lead Tracking');
-      const successfulLeads = apolloLeads.slice(0, instantlyResults.leads_added);
-      await markLeadsAsContacted(successfulLeads);
-      console.log('✅ Leads marked as contacted for future deduplication\n');
+    const targetCampaign = campaigns.find(c => c.id === campaignId);
+    if (targetCampaign) {
+      console.log(`✅ Found target campaign: ${targetCampaign.name}`);
+    } else {
+      console.log(`❌ Campaign ${campaignId} NOT FOUND in your account`);
+      console.log('Available campaign IDs:');
+      campaigns.forEach(c => console.log(`  - ${c.id}`));
     }
 
-    // Step 4: Final Summary
-    console.log('STEP 4: Pipeline Summary');
-    console.log('📊 FINAL RESULTS:');
-    console.log(`🎯 Total leads processed: ${apolloLeads.length}`);
-    console.log(`📧 Successfully added to campaign: ${instantlyResults.leads_added}`);
-    console.log(`❌ Failed to add: ${instantlyResults.leads_failed}`);
-    console.log(`📈 Success rate: ${instantlyResults.success_rate}%`);
-    console.log(`📊 Campaign now has: ${instantlyResults.campaign_total} total leads`);
-
-    console.log('\n🚀 EMAIL OUTREACH ACTIVE!');
-    console.log('📧 Your AI receptionist campaign is now reaching Louisiana prospects');
-    console.log('📊 Monitor results at: https://app.instantly.ai/');
-    console.log('🎯 Next week: Pipeline will run again with fresh leads');
-    console.log('-------------------');
-
-    return {
-      apollo_leads: apolloLeads.length,
-      instantly_added: instantlyResults.leads_added,
-      campaign_total: instantlyResults.campaign_total,
-      success_rate: instantlyResults.success_rate
+    // Test 3: Try to create a single test lead
+    console.log(`\nTEST 3: Creating a test lead`);
+    const testLead = {
+      campaign: campaignId,
+      email: 'test@example.com',
+      first_name: 'Test',
+      last_name: 'User',
+      company_name: 'Test Company'
     };
 
-  } catch (error) {
-    console.error('❌ Pipeline failed:', error.message);
-    console.error('🔧 Check your API keys and try again');
-    
-    // Log which step failed
-    if (error.message.includes('Apollo')) {
-      console.error('💡 Issue seems to be with Apollo API - check APOLLO_API_KEY');
-    } else if (error.message.includes('Instantly')) {
-      console.error('💡 Issue seems to be with Instantly API - check INSTANTLY_API_KEY');
+    try {
+      const response = await instantly.client.post('/api/v2/leads', testLead);
+      console.log('✅ Test lead created successfully:', response.data);
+    } catch (error) {
+      console.log('❌ Test lead creation failed:', error.response?.data || error.message);
     }
-    
-    throw error;
+
+  } catch (error) {
+    console.error('❌ Debug failed:', error.response?.data || error.message);
   }
 }
 
-main().catch(error => {
-  console.error('💥 Fatal error:', error);
-  process.exit(1);
-});
+main().catch(console.error);
