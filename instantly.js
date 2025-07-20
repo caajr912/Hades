@@ -23,41 +23,63 @@ export class InstantlyManager {
     try {
       console.log(`📧 Adding ${leads.length} leads to Instantly campaign: ${campaignId}`);
       
-      // Format leads for Instantly API V2
-      const formattedLeads = leads.map(lead => ({
-        email: lead.email,
-        first_name: lead.firstName,
-        last_name: lead.lastName,
-        company_name: lead.companyName,
-        title: lead.title,
-        phone: lead.phone,
-        website: lead.website,
-        city: lead.city,
-        state: lead.state,
-        industry: lead.industry,
-        // Custom variables (API V2 format)
-        custom_variables: {
-          company_size: lead.companySize?.toString() || '',
-          apollo_id: lead.apolloId,
-          pull_date: lead.pullDate
+      // In API V2, we create individual leads with campaign assignment
+      let successCount = 0;
+      let failCount = 0;
+      const errors = [];
+
+      for (const lead of leads) {
+        try {
+          const leadData = {
+            campaign: campaignId,
+            email: lead.email,
+            first_name: lead.firstName,
+            last_name: lead.lastName,
+            company_name: lead.companyName,
+            title: lead.title,
+            phone: lead.phone,
+            website: lead.website,
+            city: lead.city,
+            state: lead.state,
+            industry: lead.industry,
+            // Custom variables (API V2 format)
+            custom_variables: {
+              company_size: lead.companySize?.toString() || '',
+              apollo_id: lead.apolloId || '',
+              pull_date: lead.pullDate || new Date().toISOString()
+            }
+          };
+
+          const response = await this.client.post('/api/v2/leads', leadData);
+          
+          if (response.data) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } catch (leadError) {
+          failCount++;
+          errors.push(`${lead.email}: ${leadError.response?.data?.message || leadError.message}`);
         }
-      }));
 
-      const response = await this.client.post(`/v2/campaigns/${campaignId}/leads`, {
-        leads: formattedLeads
-      });
-
-      if (response.data) {
-        console.log(`✅ Successfully added ${formattedLeads.length} leads to campaign`);
-        return {
-          success: true,
-          added_count: formattedLeads.length,
-          campaign_id: campaignId,
-          leads_added: formattedLeads
-        };
+        // Small delay between individual lead creation
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      throw new Error('Failed to add leads');
+      console.log(`✅ Successfully added ${successCount}/${leads.length} leads to campaign`);
+      
+      if (errors.length > 0 && errors.length <= 5) {
+        console.log('⚠️ Some errors:', errors.slice(0, 5));
+      }
+
+      return {
+        success: true,
+        added_count: successCount,
+        failed_count: failCount,
+        campaign_id: campaignId,
+        total_processed: leads.length
+      };
+
     } catch (error) {
       console.error('❌ Adding leads failed:', error.response?.data || error.message);
       throw error;
@@ -71,7 +93,7 @@ export class InstantlyManager {
    */
   async getCampaignStats(campaignId) {
     try {
-      const response = await this.client.get(`/v2/campaigns/${campaignId}`);
+      const response = await this.client.get(`/api/v2/campaigns/${campaignId}`);
 
       if (response.data) {
         return response.data;
@@ -90,7 +112,7 @@ export class InstantlyManager {
    */
   async listCampaigns() {
     try {
-      const response = await this.client.get('/v2/campaigns');
+      const response = await this.client.get('/api/v2/campaigns');
 
       if (response.data) {
         return response.data;
