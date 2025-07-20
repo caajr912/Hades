@@ -1,51 +1,70 @@
+import { runWellBuiltWebBatch } from './apollo.js';
 import { InstantlyManager } from './instantly.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  console.log('🔍 Debugging Instantly Integration...\n');
-  console.log('API Key exists:', !!process.env.INSTANTLY_API_KEY);
-  console.log('API Key starts with:', process.env.INSTANTLY_API_KEY?.substring(0, 10) + '...');
-
+  console.log('🔍 Testing real lead creation...\n');
+  
   const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
+  const campaignId = '5cf286eb-6adc-45cc-ba82-d5225f91c3a0';
 
-  try {
-    // Test the basic API connection
-    console.log('\nTEST 1: Testing basic API connection');
-    
-    try {
-      const response = await instantly.client.get('/api/v2/campaigns');
-      console.log('✅ API Response status:', response.status);
-      console.log('✅ Response data type:', typeof response.data);
-      console.log('✅ Response data:', JSON.stringify(response.data, null, 2));
-    } catch (apiError) {
-      console.log('❌ API call failed:', apiError.response?.status);
-      console.log('❌ Error data:', apiError.response?.data);
-      console.log('❌ Error message:', apiError.message);
-    }
+  // Get one real lead from Apollo
+  const apolloLeads = await runWellBuiltWebBatch();
+  
+  if (apolloLeads.length > 0) {
+    const testLead = apolloLeads[0];
+    console.log('📄 Sample Apollo lead:', {
+      firstName: testLead.firstName,
+      email: testLead.email,
+      companyName: testLead.companyName
+    });
 
-    // Test creating a simple lead
-    console.log('\nTEST 2: Testing lead creation');
+    // Test 1: Try with all the data (like our original attempt)
+    console.log('\nTEST 1: Full lead data');
     try {
-      const testLead = {
-        campaign: '5cf286eb-6adc-45cc-ba82-d5225f91c3a0',
-        email: 'debug-test@example.com',
-        first_name: 'Debug',
-        last_name: 'Test'
+      const fullData = {
+        campaign: campaignId,
+        email: testLead.email,
+        first_name: testLead.firstName,
+        last_name: testLead.lastName,
+        company_name: testLead.companyName,
+        title: testLead.title,
+        phone: testLead.phone,
+        website: testLead.website,
+        city: testLead.city,
+        state: testLead.state,
+        industry: testLead.industry,
+        custom_variables: {
+          company_size: testLead.companySize?.toString() || '',
+          apollo_id: testLead.apolloId || '',
+          pull_date: testLead.pullDate || new Date().toISOString()
+        }
       };
-      
-      const response = await instantly.client.post('/api/v2/leads', testLead);
-      console.log('✅ Lead creation response:', response.status);
-      console.log('✅ Lead data:', JSON.stringify(response.data, null, 2));
-    } catch (leadError) {
-      console.log('❌ Lead creation failed:', leadError.response?.status);
-      console.log('❌ Lead error data:', leadError.response?.data);
-      console.log('❌ Lead error message:', leadError.message);
+
+      const response = await instantly.client.post('/api/v2/leads', fullData);
+      console.log('✅ Full data lead created:', response.data.id);
+    } catch (error) {
+      console.log('❌ Full data failed:', error.response?.data || error.message);
     }
 
-  } catch (error) {
-    console.error('❌ Debug failed:', error.message);
+    // Test 2: Try with minimal data (like our successful test)
+    console.log('\nTEST 2: Minimal lead data');
+    try {
+      const minimalData = {
+        campaign: campaignId,
+        email: testLead.email.replace('@', '+minimal@'), // Slight variation to avoid duplicate
+        first_name: testLead.firstName,
+        last_name: testLead.lastName,
+        company_name: testLead.companyName
+      };
+
+      const response = await instantly.client.post('/api/v2/leads', minimalData);
+      console.log('✅ Minimal data lead created:', response.data.id);
+    } catch (error) {
+      console.log('❌ Minimal data failed:', error.response?.data || error.message);
+    }
   }
 }
 
