@@ -208,56 +208,120 @@ export class ApolloLeadPuller {
   }
 
   /**
-   * ENHANCED Weekly batch job with Instantly deduplication
+   * ENHANCED Weekly batch job with Instantly deduplication AND pagination
    * This now checks Instantly BEFORE enriching leads to save Apollo credits
+   * AND can pull from multiple Apollo pages to find new leads
    */
-  async getWeeklyLeadBatch(batchSize = 100) {
-    console.log('🎯 Starting WellBuiltWeb weekly lead pull with Instantly deduplication...');
+  async getWeeklyLeadBatch(batchSize = 100, maxPages = 5) {
+    console.log('🎯 Starting WellBuiltWeb weekly lead pull with Instantly deduplication + pagination...');
     console.log(`📅 Target: ${batchSize} high-quality AI receptionist prospects`);
+    console.log(`📄 Will check up to ${maxPages} Apollo pages for new leads`);
     
     const campaignId = process.env.INSTANTLY_CAMPAIGN_ID; // Get from environment
     
     try {
-      // Step 1: Pull MORE leads from Apollo than we need (accounting for duplicates)
-      const searchBuffer = Math.max(batchSize * 3, 300); // Pull 3x target to account for duplicates
-      console.log(`🔍 Pulling ${searchBuffer} raw leads from Apollo (${batchSize} target after filtering)...`);
-      
-      const searchBody = ApolloLeadPuller.getWellBuiltWebSearchBody(1, searchBuffer);
-      const response = await this.client.post('/mixed_people/search', searchBody);
-      
-      if (!response.data?.people?.length) {
-        console.log('⚠️ No leads found with current criteria');
+      let allNewLeads = [];
+      let currentPage = 1;
+      let totalProcessed = 0;
+      let totalDuplicates = 0;
+
+      // Step 1: Get existing leads from Instantly ONCE (don't repeat this for each page)
+      let existingEmails = new Set();
+      if (this.instantly) {
+        console.log('🔍 Getting existing Instantly leads for deduplication...');
+        existingEmails = await this.instantly.getExistingLeads(campaignId);
+        console.log(`🔄 Will filter against ${existingEmails.size} existing emails`);
+      }
+
+      // Step 2: Paginate through Apollo until we have enough new leads
+      while (allNewLeads.length < batchSize && currentPage <= maxPages) {
+        console.log(`\n📄 === APOLLO PAGE ${currentPage} ===`);
+        
+        // Pull from current Apollo page
+        const searchBuffer = Math.min(200, batchSize * 2); // Pull 2x target per page
+        console.log(`🔍 Pulling ${searchBuffer} leads from Apollo page ${currentPage}...`);
+        
+        const searchBody = ApolloLeadPuller.getWellBuiltWebSearchBody(currentPage, searchBuffer);
+        const response = await this.client.post('/mixed_people/search', searchBody);
+        
+        if (!response.data?.people?.length) {
+          console.log(`📄 No more leads found on page ${currentPage} - reached end of results`);
+          break;
+        }
+
+        let pageLeads = response.data.people;
+        console.log(`✅ Raw leads from page ${currentPage}: ${pageLeads.length}`);
+        totalProcessed += pageLeads.length;
+
+        // Apply quality filters
+        pageLeads = this.filterWellBuiltWebLeads(pageLeads);
+        console.log(`🎯 Qualified leads after filtering: ${pageLeads.length}`);
+
+        // Filter duplicates against Instantly
+        const pageNewLeads = pageLeads.filter(lead => {
+          const email = lead.email?.toLowerCase();
+          return email && !existingEmails.has(email);
+        });
+
+        const pageDuplicates = pageLeads.length - pageNewLeads.length;
+        totalDuplicates += pageDuplicates;
+
+        if (pageDuplicates > 0) {
+          console.log(`🔄 Page ${currentPage}: Removed ${pageDuplicates} duplicates`);
+        }
+        console.log(`🆕 Page ${currentPage}: ${pageNewLeads.length} new leads found`);
+
+        // Add new leads to our collection
+        allNewLeads.push(...pageNewLeads);
+
+        // Add these new emails to our existing set for future page deduplication
+        pageNewLeads.forEach(lead => {
+          if (lead.email) {
+            existingEmails.add(lead.email.toLowerCase());
+          }
+        });
+
+        console.log(`📊 Running total: ${allNewLeads.length}/${batchSize} new leads collected`);
+
+        // If we have enough, stop here
+        if (allNewLeads.length >= batchSize) {
+          console.log(`🎯 Target reached! Collected ${allNewLeads.length} new leads`);
+          break;
+        }
+
+        // If this page had very few new leads, we might be hitting saturation
+        if (pageNewLeads.length < 5) {
+          console.log(`⚠️ Only ${pageNewLeads.length} new leads on page ${currentPage} - market might be saturated`);
+        }
+
+        currentPage++;
+        
+        // Rate limiting between pages
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Summary of pagination results
+      console.log(`\n📊 PAGINATION SUMMARY:`);
+      console.log(`📄 Pages checked: ${currentPage - 1} of ${maxPages} max`);
+      console.log(`📋 Total leads processed: ${totalProcessed}`);
+      console.log(`🔄 Total duplicates filtered: ${totalDuplicates}`);
+      console.log(`🆕 New leads found: ${allNewLeads.length}`);
+      console.log(`💰 Apollo credits saved by avoiding duplicates: ${totalDuplicates}`);
+
+      if (allNewLeads.length === 0) {
+        console.log('\n⚠️ No new leads found across all pages!');
+        console.log('💡 Your ideal customer criteria might be fully saturated');
+        console.log('💡 Consider expanding to new markets or adjusting criteria');
         return [];
       }
 
-      let leads = response.data.people;
-      console.log(`✅ Raw leads pulled from Apollo: ${leads.length}`);
-
-      // Step 2: Apply WellBuiltWeb specific quality filters
-      leads = this.filterWellBuiltWebLeads(leads);
-      console.log(`🎯 Qualified leads after filtering: ${leads.length}`);
-
-      // Step 3: 🆕 NEW - Remove duplicates against Instantly BEFORE enriching
-      let newLeads = leads;
-      if (this.instantly) {
-        newLeads = await this.instantly.filterDuplicateLeads(leads, campaignId);
-        
-        if (newLeads.length === 0) {
-          console.log('⚠️ No new leads after deduplication - all were already in Instantly!');
-          console.log('💡 Consider expanding your Apollo search criteria or targeting different markets');
-          return [];
-        }
-      } else {
-        console.log('⚠️ No Instantly integration - cannot check for duplicates');
+      // Take only what we need for enrichment
+      const leadsToEnrich = allNewLeads.slice(0, batchSize);
+      if (leadsToEnrich.length < allNewLeads.length) {
+        console.log(`📊 Taking first ${leadsToEnrich.length} leads for enrichment (${allNewLeads.length - leadsToEnrich.length} saved for next time)`);
       }
 
-      // Step 4: Take only what we need for enrichment (don't waste credits)
-      const leadsToEnrich = newLeads.slice(0, batchSize);
-      if (leadsToEnrich.length < newLeads.length) {
-        console.log(`📊 Taking first ${leadsToEnrich.length} leads for enrichment (${newLeads.length - leadsToEnrich.length} saved for next time)`);
-      }
-
-      // Step 5: Enrich leads to get real email addresses (only for new leads!)
+      // Step 3: Enrich leads to get real email addresses (only for new leads!)
       console.log('\n🔓 ENRICHING LEADS FOR REAL EMAIL ADDRESSES:');
       const enrichedLeads = await this.enrichLeadsWithEmails(leadsToEnrich);
 
@@ -266,13 +330,13 @@ export class ApolloLeadPuller {
         return [];
       }
 
-      // Step 6: Final deduplication check (in case enrichment revealed different emails)
+      // Step 4: Final deduplication check (in case enrichment revealed different emails)
       let finalLeads = enrichedLeads;
       if (this.instantly) {
-        const existingEmails = await this.instantly.getExistingLeads(campaignId);
+        const finalExistingEmails = await this.instantly.getExistingLeads(campaignId);
         finalLeads = enrichedLeads.filter(lead => {
           const email = lead.email?.toLowerCase();
-          return email && !existingEmails.has(email);
+          return email && !finalExistingEmails.has(email);
         });
 
         const enrichmentDuplicates = enrichedLeads.length - finalLeads.length;
@@ -281,8 +345,8 @@ export class ApolloLeadPuller {
         }
       }
 
-      // Log summary for weekly report
-      this.logWeeklyBatchSummary(finalLeads, leads.length - newLeads.length);
+      // Log summary for weekly report with pagination stats
+      this.logWeeklyBatchSummary(finalLeads, totalDuplicates, currentPage - 1);
       
       return finalLeads;
 
@@ -406,9 +470,9 @@ export class ApolloLeadPuller {
   }
 
   /**
-   * Enhanced logging with duplicate prevention stats
+   * Enhanced logging with pagination and duplicate prevention stats
    */
-  logWeeklyBatchSummary(leads, duplicatesFiltered = 0) {
+  logWeeklyBatchSummary(leads, duplicatesFiltered = 0, pagesChecked = 1) {
     const industries = {};
     const titles = {};
     const states = {};
@@ -427,8 +491,9 @@ export class ApolloLeadPuller {
       states[state] = (states[state] || 0) + 1;
     });
 
-    console.log('\n📊 ENHANCED WEEKLY BATCH SUMMARY:');
+    console.log('\n📊 ENHANCED WEEKLY BATCH SUMMARY WITH PAGINATION:');
     console.log(`🎯 NEW Qualified Leads (duplicates avoided): ${leads.length}`);
+    console.log(`📄 Apollo pages checked: ${pagesChecked}`);
     console.log(`🔄 Duplicates filtered out: ${duplicatesFiltered}`);
     console.log(`💰 Apollo credits saved by avoiding duplicates: ${duplicatesFiltered}`);
     console.log('\nTop Industries:', Object.entries(industries).slice(0, 5));
@@ -509,8 +574,8 @@ export class ApolloLeadPuller {
   }
 }
 
-// Enhanced WellBuiltWeb Weekly Lead Pull with Instantly Integration
-export async function runWellBuiltWebBatch() {
+// Enhanced WellBuiltWeb Weekly Lead Pull with Instantly Integration + Pagination
+export async function runWellBuiltWebBatch(maxPages = 5) {
   const apollo = new ApolloLeadPuller(
     process.env.APOLLO_API_KEY,
     process.env.INSTANTLY_API_KEY  // Pass Instantly API key for deduplication
@@ -518,16 +583,19 @@ export async function runWellBuiltWebBatch() {
   
   try {
     console.log('🚀 WellBuiltWeb AI Receptionist Lead Pull Starting...');
-    console.log('🔄 With Instantly duplicate prevention enabled!');
+    console.log('🔄 With Instantly duplicate prevention + Apollo pagination enabled!');
     console.log('📍 Louisiana Focus: Building local relationships around Lafayette');
     console.log('📅 Target: Small businesses needing phone coverage (5-50 employees)');
+    console.log(`📄 Will check up to ${maxPages} Apollo pages for fresh leads`);
     
-    // Get this week's batch of NEW leads (not in Instantly)
-    const leads = await apollo.getWeeklyLeadBatch(100);
+    // Get this week's batch of NEW leads with pagination (not in Instantly)
+    const leads = await apollo.getWeeklyLeadBatch(100, maxPages);
     
     if (leads.length === 0) {
-      console.log('⚠️ No new qualified leads found this week');
-      return { leads: [], message: 'No new leads found' };
+      console.log('⚠️ No new qualified leads found across all pages checked');
+      console.log('💡 Your ideal customer criteria are fully saturated');
+      console.log('💡 Consider expanding to new markets or adjusting targeting criteria');
+      return { leads: [], message: 'No new leads found - market saturated' };
     }
 
     // Transform for Clay enrichment or direct use
@@ -560,13 +628,13 @@ export async function runWellBuiltWebBatch() {
       
       // For tracking
       pullDate: new Date().toISOString(),
-      leadSource: 'apollo_weekly_batch'
+      leadSource: 'apollo_weekly_batch_paginated'
     }));
 
-    console.log(`✅ ${enrichmentReady.length} NEW leads ready for outreach (duplicates already filtered!)`);
+    console.log(`✅ ${enrichmentReady.length} NEW leads ready for outreach (found via pagination + deduplication!)`);
     return { 
       leads: enrichmentReady,
-      message: `Found ${enrichmentReady.length} new leads`
+      message: `Found ${enrichmentReady.length} new leads via pagination`
     };
 
   } catch (error) {
