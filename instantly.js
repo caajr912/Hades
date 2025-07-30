@@ -48,7 +48,7 @@ export class InstantlyManager {
   }
 
   /**
-   * 🆕 NEW: Get existing leads using V2 API with correct format
+   * 🆕 NEW: Get existing leads using V2 API with correct pagination
    */
   async getExistingLeads(campaignId = null) {
     try {
@@ -61,38 +61,62 @@ export class InstantlyManager {
       let totalChecked = 0;
 
       try {
-        // Use the correct V2 leads/list POST endpoint
-        const requestBody = {
-          limit: 1000
-        };
+        // V2 API pagination with max limit of 100
+        let hasMore = true;
+        let startingAfter = null;
 
-        if (campaignId) {
-          requestBody.campaign_id = campaignId;
-        }
+        while (hasMore) {
+          const requestBody = {
+            limit: 100 // Max allowed by V2 API
+          };
 
-        const response = await this.client.post('/api/v2/leads/list', requestBody);
-
-        // V2 API might return leads in `items` array like campaigns
-        let leads = [];
-        if (response.data) {
-          if (Array.isArray(response.data)) {
-            leads = response.data;
-          } else if (response.data.items && Array.isArray(response.data.items)) {
-            leads = response.data.items;
+          if (campaignId) {
+            requestBody.campaign_id = campaignId;
           }
+
+          if (startingAfter) {
+            requestBody.starting_after = startingAfter;
+          }
+
+          const response = await this.client.post('/api/v2/leads/list', requestBody);
+
+          // Handle V2 API response format
+          let leads = [];
+          if (response.data) {
+            if (Array.isArray(response.data)) {
+              leads = response.data;
+            } else if (response.data.items && Array.isArray(response.data.items)) {
+              leads = response.data.items;
+            }
+          }
+
+          if (leads.length > 0) {
+            leads.forEach(lead => {
+              if (lead.email) {
+                allEmails.add(lead.email.toLowerCase());
+              }
+            });
+            
+            totalChecked += leads.length;
+            console.log(`📧 Processed ${totalChecked} existing leads...`);
+
+            // Check if we got less than the limit (meaning we're at the end)
+            if (leads.length < 100) {
+              hasMore = false;
+            } else {
+              // Use the last lead's ID for pagination
+              startingAfter = leads[leads.length - 1].id;
+            }
+          } else {
+            hasMore = false;
+          }
+
+          // Rate limiting to be nice to the API
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
 
-        if (leads.length > 0) {
-          leads.forEach(lead => {
-            if (lead.email) {
-              allEmails.add(lead.email.toLowerCase());
-            }
-          });
-          
-          totalChecked = leads.length;
-          console.log(`📧 Processed ${totalChecked} existing leads`);
-        } else {
-          console.log('📧 No existing leads found');
+        if (totalChecked === 0) {
+          console.log('📧 No existing leads found in this campaign');
         }
 
       } catch (leadsError) {
