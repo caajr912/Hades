@@ -252,8 +252,13 @@ export class ApolloLeadPuller {
         let pageLeads = response.data.people;
         console.log(`✅ Raw leads from page ${currentPage}: ${pageLeads.length}`);
 
-        // 🔬 DEBUG: Show first few leads from this page
-        console.log(`🔬 DEBUG: First 5 lead emails from page ${currentPage}:`);
+        // 🔓 UNLOCK EMAILS IMMEDIATELY so we can properly deduplicate
+        console.log(`🔓 Unlocking emails for page ${currentPage} leads...`);
+        pageLeads = await this.enrichLeadsWithEmails(pageLeads);
+        console.log(`✅ Unlocked ${pageLeads.length} leads with real emails`);
+
+        // 🔬 DEBUG: Show first few leads from this page (now with real emails)
+        console.log(`🔬 DEBUG: First 5 unlocked emails from page ${currentPage}:`);
         pageLeads.slice(0, 5).forEach((lead, i) => {
           const email = lead.email || 'NO_EMAIL';
           const name = `${lead.first_name || 'NO_FNAME'} ${lead.last_name || 'NO_LNAME'}`;
@@ -261,44 +266,24 @@ export class ApolloLeadPuller {
           console.log(`   ${i+1}. ${email} - ${name} at ${company}`);
         });
 
-        // 🔬 DEBUG: Check for lead overlap with previous pages
+        // 🔬 DEBUG: Check for lead overlap with existing Instantly leads
         if (currentPage > 1) {
           const currentPageEmails = new Set(pageLeads.map(lead => lead.email).filter(Boolean));
-          const previousLeadEmails = new Set();
           
-          // Get all emails from previous pages we've processed
-          allNewLeads.concat(pageLeads).forEach(lead => {
-            if (lead.email) previousLeadEmails.add(lead.email);
-          });
-
-          // Find overlap between this page and all previous leads
           const overlapCount = [...currentPageEmails].filter(email => 
-            [...existingEmails].includes(email.toLowerCase())
+            existingEmails.has(email.toLowerCase())
           ).length;
           
           console.log(`🔬 DEBUG: Overlap with existing Instantly leads: ${overlapCount}/${pageLeads.length}`);
-          
-          // Check if this page has leads we've seen on previous pages
-          const seenBefore = pageLeads.filter(lead => 
-            lead.email && [...previousLeadEmails].some(prevEmail => 
-              prevEmail.toLowerCase() === lead.email.toLowerCase()
-            )
-          ).length;
-          
-          if (seenBefore > 0) {
-            console.log(`🔬 DEBUG: ⚠️ ${seenBefore} leads from this page were already seen on previous pages!`);
-          } else {
-            console.log(`🔬 DEBUG: ✅ All leads on this page are new (not seen on previous pages)`);
-          }
         }
 
         totalProcessed += pageLeads.length;
 
-        // Apply quality filters
+        // Apply quality filters (after enrichment)
         pageLeads = this.filterWellBuiltWebLeads(pageLeads);
         console.log(`🎯 Qualified leads after filtering: ${pageLeads.length}`);
 
-        // Filter duplicates against Instantly
+        // NOW we can properly filter duplicates against Instantly using real emails
         const pageNewLeads = pageLeads.filter(lead => {
           const email = lead.email?.toLowerCase();
           return email && !existingEmails.has(email);
@@ -308,18 +293,18 @@ export class ApolloLeadPuller {
         totalDuplicates += pageDuplicates;
 
         if (pageDuplicates > 0) {
-          console.log(`🔄 Page ${currentPage}: Removed ${pageDuplicates} duplicates`);
+          console.log(`🔄 Page ${currentPage}: Removed ${pageDuplicates} real duplicates`);
           
-          // 🔬 DEBUG: Show some of the duplicate emails
+          // 🔬 DEBUG: Show some of the actual duplicate emails
           const duplicateEmails = pageLeads
             .filter(lead => lead.email && existingEmails.has(lead.email.toLowerCase()))
             .slice(0, 3)
             .map(lead => lead.email);
           if (duplicateEmails.length > 0) {
-            console.log(`🔬 DEBUG: Sample duplicates: ${duplicateEmails.join(', ')}`);
+            console.log(`🔬 DEBUG: Sample real duplicates: ${duplicateEmails.join(', ')}`);
           }
         }
-        console.log(`🆕 Page ${currentPage}: ${pageNewLeads.length} new leads found`);
+        console.log(`🆕 Page ${currentPage}: ${pageNewLeads.length} truly new leads found`);
 
         // Add new leads to our collection
         allNewLeads.push(...pageNewLeads);
@@ -354,8 +339,9 @@ export class ApolloLeadPuller {
       console.log(`\n📊 PAGINATION SUMMARY:`);
       console.log(`📄 Pages checked: ${currentPage - 1} of ${maxPages} max`);
       console.log(`📋 Total leads processed: ${totalProcessed}`);
-      console.log(`🔄 Total duplicates filtered: ${totalDuplicates}`);
+      console.log(`🔄 Total real duplicates filtered: ${totalDuplicates}`);
       console.log(`🆕 New leads found: ${allNewLeads.length}`);
+      console.log(`💰 Apollo credits used for enrichment: ${totalProcessed}`);
       console.log(`💰 Apollo credits saved by avoiding duplicates: ${totalDuplicates}`);
 
       if (allNewLeads.length === 0) {
@@ -365,33 +351,24 @@ export class ApolloLeadPuller {
         return [];
       }
 
-      // Take only what we need for enrichment
-      const leadsToEnrich = allNewLeads.slice(0, batchSize);
-      if (leadsToEnrich.length < allNewLeads.length) {
-        console.log(`📊 Taking first ${leadsToEnrich.length} leads for enrichment (${allNewLeads.length - leadsToEnrich.length} saved for next time)`);
-      }
+      // Since we already enriched during pagination, we don't need to enrich again
+      console.log('\n✅ LEADS ALREADY ENRICHED DURING PAGINATION');
+      console.log('🔓 All leads have real email addresses and have been deduplicated');
 
-      // Step 3: Enrich leads to get real email addresses (only for new leads!)
-      console.log('\n🔓 ENRICHING LEADS FOR REAL EMAIL ADDRESSES:');
-      const enrichedLeads = await this.enrichLeadsWithEmails(leadsToEnrich);
-
-      if (enrichedLeads.length === 0) {
-        console.log('⚠️ No leads were successfully enriched with real emails');
-        return [];
-      }
-
-      // Step 4: Final deduplication check (in case enrichment revealed different emails)
-      let finalLeads = enrichedLeads;
+      // Final deduplication check against Instantly (shouldn't find any, but just to be safe)
+      let finalLeads = allNewLeads;
       if (this.instantly) {
         const finalExistingEmails = await this.instantly.getExistingLeads(campaignId);
-        finalLeads = enrichedLeads.filter(lead => {
+        finalLeads = allNewLeads.filter(lead => {
           const email = lead.email?.toLowerCase();
           return email && !finalExistingEmails.has(email);
         });
 
-        const enrichmentDuplicates = enrichedLeads.length - finalLeads.length;
+        const enrichmentDuplicates = allNewLeads.length - finalLeads.length;
         if (enrichmentDuplicates > 0) {
-          console.log(`🔄 Removed ${enrichmentDuplicates} additional duplicates found after enrichment`);
+          console.log(`🔄 Removed ${enrichmentDuplicates} additional duplicates in final check`);
+        } else {
+          console.log(`✅ No additional duplicates found in final check`);
         }
       }
 
