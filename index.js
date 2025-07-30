@@ -16,7 +16,8 @@ async function main() {
     console.log('STEP 1: Apollo Lead Generation + Instantly Deduplication + Email Enrichment');
     console.log('🔍 This will check existing Instantly leads BEFORE enriching to save Apollo credits...\n');
     
-    const apolloResult = await runWellBuiltWebBatch();
+    const maxPages = parseInt(process.env.APOLLO_MAX_PAGES || '5');
+    const apolloResult = await runWellBuiltWebBatch(maxPages);
     
     if (!apolloResult.leads || apolloResult.leads.length === 0) {
       console.log('⚠️ No new leads found this week.');
