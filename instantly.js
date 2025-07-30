@@ -1,283 +1,293 @@
-import axios from 'axios';
+/**
+ * Instantly Helper Functions - Add these to your existing instantly.js file
+ * These functions help you find campaign IDs and check for duplicates
+ */
 
-export class InstantlyManager {
-  constructor(apiKey) {
-    this.apiKey = apiKey;
-    this.baseURL = 'https://api.instantly.ai';
-    this.client = axios.create({
-      baseURL: this.baseURL,
+/**
+ * Get all campaigns from your Instantly account
+ * Use this to find your campaign IDs
+ */
+async function getCampaigns() {
+  const INSTANTLY_API_KEY = process.env.INSTANTLY_API_KEY;
+  
+  if (!INSTANTLY_API_KEY) {
+    console.error('❌ INSTANTLY_API_KEY not found in environment variables');
+    return [];
+  }
+
+  try {
+    console.log('🔍 Fetching all campaigns from Instantly...');
+    
+    const response = await fetch('https://api.instantly.ai/api/v2/campaigns', {
+      method: 'GET',
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
+        'Authorization': `Bearer ${INSTANTLY_API_KEY}`,
         'Content-Type': 'application/json'
       }
     });
-  }
 
-  /**
-   * Add leads to an existing campaign (API V2)
-   * @param {string} campaignId - Campaign ID to add leads to
-   * @param {Array} leads - Array of lead objects
-   * @returns {Promise<Object>} Addition results
-   */
-  async addLeadsToCampaign(campaignId, leads) {
-    try {
-      console.log(`📧 Adding ${leads.length} leads to Instantly campaign: ${campaignId}`);
-      
-      // In API V2, we create individual leads with campaign assignment
-      let successCount = 0;
-      let failCount = 0;
-      const errors = [];
-
-      for (const lead of leads) {
-        try {
-          const leadData = {
-            campaign: campaignId,
-            email: lead.email,
-            first_name: lead.firstName,
-            last_name: lead.lastName,
-            company_name: lead.companyName,
-            title: lead.title,
-            phone: lead.phone,
-            website: lead.website,
-            city: lead.city,
-            state: lead.state,
-            industry: lead.industry,
-            // Custom variables (API V2 format)
-            custom_variables: {
-              company_size: lead.companySize?.toString() || '',
-              apollo_id: lead.apolloId || '',
-              pull_date: lead.pullDate || new Date().toISOString()
-            }
-          };
-
-          const response = await this.client.post('/api/v2/leads', leadData);
-          
-          if (response.data) {
-            successCount++;
-          } else {
-            failCount++;
-          }
-        } catch (leadError) {
-          failCount++;
-          errors.push(`${lead.email}: ${leadError.response?.data?.message || leadError.message}`);
-        }
-
-        // Small delay between individual lead creation
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      console.log(`✅ Successfully added ${successCount}/${leads.length} leads to campaign`);
-      
-      if (errors.length > 0 && errors.length <= 5) {
-        console.log('⚠️ Some errors:', errors.slice(0, 5));
-      }
-
-      return {
-        success: true,
-        added_count: successCount,
-        failed_count: failCount,
-        campaign_id: campaignId,
-        total_processed: leads.length
-      };
-
-    } catch (error) {
-      console.error('❌ Adding leads failed:', error.response?.data || error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Get campaign details (API V2)
-   * @param {string} campaignId - Campaign ID
-   * @returns {Promise<Object>} Campaign details
-   */
-  async getCampaignStats(campaignId) {
-    try {
-      const response = await this.client.get(`/api/v2/campaigns/${campaignId}`);
-
-      if (response.data) {
-        return response.data;
-      }
-
-      throw new Error('Failed to get campaign stats');
-    } catch (error) {
-      console.error('❌ Getting campaign stats failed:', error.response?.data || error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * List all campaigns (API V2)
-   * @returns {Promise<Array>} Array of campaigns
-   */
-  async listCampaigns() {
-    try {
-      const response = await this.client.get('/api/v2/campaigns');
-
-      if (response.data) {
-        return response.data;
-      }
-
-      return [];
-    } catch (error) {
-      console.error('❌ Listing campaigns failed:', error.response?.data || error.message);
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('❌ Failed to fetch campaigns:', response.status, errorData);
       return [];
     }
-  }
 
-  /**
-   * Batch add leads with error handling and progress tracking
-   * @param {string} campaignId - Campaign ID
-   * @param {Array} leads - Array of leads
-   * @param {number} batchSize - Number of leads to add per batch
-   * @returns {Promise<Object>} Results summary
-   */
-  async batchAddLeads(campaignId, leads, batchSize = 25) {
-    console.log(`📊 Processing ${leads.length} leads in batches of ${batchSize}`);
+    const data = await response.json();
     
-    const results = {
-      total_leads: leads.length,
-      successful_adds: 0,
-      failed_adds: 0,
-      batches_processed: 0,
-      errors: []
-    };
-
-    for (let i = 0; i < leads.length; i += batchSize) {
-      const batch = leads.slice(i, i + batchSize);
-      const batchNumber = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(leads.length / batchSize);
+    if (data && data.length > 0) {
+      console.log(`✅ Found ${data.length} campaigns:`);
       
-      console.log(`📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} leads)`);
+      // Display campaigns in a nice format
+      data.forEach((campaign, index) => {
+        console.log(`${index + 1}. "${campaign.name}" (ID: ${campaign.id})`);
+        console.log(`   Status: ${campaign.status === 1 ? 'Active' : 'Inactive'}`);
+        console.log(`   Created: ${new Date(campaign.timestamp_created).toLocaleDateString()}`);
+        console.log('   ---');
+      });
       
-      try {
-        await this.addLeadsToCampaign(campaignId, batch);
-        results.successful_adds += batch.length;
-        results.batches_processed++;
-        
-        // Rate limiting - wait between batches
-        if (i + batchSize < leads.length) {
-          console.log('⏳ Waiting 2 seconds before next batch...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-        
-      } catch (error) {
-        console.error(`❌ Batch ${batchNumber} failed:`, error.message);
-        results.failed_adds += batch.length;
-        results.errors.push({
-          batch: batchNumber,
-          error: error.message,
-          leads_count: batch.length
-        });
-      }
+      return data;
+    } else {
+      console.log('⚠️ No campaigns found in your Instantly account');
+      return [];
     }
 
-    return results;
+  } catch (error) {
+    console.error('❌ Error fetching campaigns:', error.message);
+    return [];
   }
 }
 
-// WellBuiltWeb Instantly Integration - Main function
-export async function runWellBuiltWebOutreach(apolloLeads, campaignId = '5cf286eb-6adc-45cc-ba82-d5225f91c3a0') {
-  const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
+/**
+ * Get existing leads from a specific campaign (or all campaigns)
+ * This is what you'll use to check for duplicates
+ */
+async function getExistingLeads(campaignId = null) {
+  const INSTANTLY_API_KEY = process.env.INSTANTLY_API_KEY;
   
   try {
-    console.log('📧 Instantly Email Campaign Starting...');
-    console.log(`🎯 Campaign ID: ${campaignId}`);
-    console.log(`📊 Processing ${apolloLeads.length} Louisiana AI receptionist prospects`);
+    console.log(campaignId ? 
+      `🔍 Checking existing leads in campaign ${campaignId}...` : 
+      '🔍 Checking existing leads across ALL campaigns...'
+    );
     
-    // Get current campaign stats (before adding new leads)
-    console.log('\n📈 Getting current campaign statistics...');
-    let initialStats = {};
-    try {
-      initialStats = await instantly.getCampaignStats(campaignId);
-      console.log(`📊 Current campaign: ${initialStats.name || 'Unknown'}`);
-    } catch (error) {
-      console.log(`⚠️ Could not get initial stats: ${error.message}`);
-    }
-    
-    // Add leads to campaign in batches
-    console.log('\n📧 Adding new leads to campaign...');
-    const results = await instantly.batchAddLeads(campaignId, apolloLeads, 25);
-    
-    // Get updated campaign stats
-    console.log('\n📈 Getting updated campaign statistics...');
-    let finalStats = {};
-    try {
-      finalStats = await instantly.getCampaignStats(campaignId);
-    } catch (error) {
-      console.log(`⚠️ Could not get final stats: ${error.message}`);
-    }
-    
-    // Log comprehensive results
-    console.log('\n🎯 INSTANTLY CAMPAIGN RESULTS:');
-    console.log(`✅ Successfully added: ${results.successful_adds} leads`);
-    console.log(`❌ Failed to add: ${results.failed_adds} leads`);
-    console.log(`📦 Batches processed: ${results.batches_processed}`);
-    console.log(`📧 Success rate: ${((results.successful_adds / results.total_leads) * 100).toFixed(1)}%`);
-    
-    if (results.errors.length > 0) {
-      console.log('\n⚠️ BATCH ERRORS:');
-      results.errors.forEach(error => {
-        console.log(`- Batch ${error.batch}: ${error.error} (${error.leads_count} leads)`);
+    const allEmails = new Set();
+    let limit = 100; // Start with smaller batches
+    let offset = 0;
+    let totalChecked = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString()
       });
+
+      // Add campaign filter if specified
+      if (campaignId) {
+        params.append('campaign_id', campaignId);
+      }
+
+      const url = `https://api.instantly.ai/api/v2/leads?${params}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${INSTANTLY_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.error('❌ Failed to fetch leads:', response.status);
+        break;
+      }
+
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        data.forEach(lead => {
+          if (lead.email) {
+            allEmails.add(lead.email.toLowerCase());
+          }
+        });
+        
+        totalChecked += data.length;
+        console.log(`📧 Processed ${totalChecked} existing leads...`);
+        
+        // Check if we got less than the limit (meaning we're at the end)
+        if (data.length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
+        }
+      } else {
+        hasMore = false;
+      }
+
+      // Rate limiting to be nice to the API
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // Sample lead added for verification
-    if (results.successful_adds > 0) {
-      console.log('\n📄 Sample lead added:');
-      const sampleLead = apolloLeads[0];
-      console.log(`Name: ${sampleLead.firstName} ${sampleLead.lastName}`);
-      console.log(`Email: ${sampleLead.email}`);
-      console.log(`Company: ${sampleLead.companyName} (${sampleLead.companySize || 'Unknown'} employees)`);
-      console.log(`Location: ${sampleLead.city}, ${sampleLead.state}`);
-    }
-
-    console.log('\n🚀 EMAIL SEQUENCE WILL START AUTOMATICALLY');
-    console.log('📧 Leads will begin receiving your AI receptionist campaign emails');
-    console.log('📊 Monitor results in your Instantly dashboard');
-    console.log('-------------------');
-
-    return {
-      campaign_id: campaignId,
-      leads_processed: results.total_leads,
-      leads_added: results.successful_adds,
-      leads_failed: results.failed_adds,
-      success_rate: ((results.successful_adds / results.total_leads) * 100).toFixed(1),
-      campaign_total: finalStats.total_leads || 'Unknown'
-    };
+    console.log(`✅ Found ${allEmails.size} unique emails already in Instantly`);
+    return allEmails;
 
   } catch (error) {
-    console.error('❌ Instantly integration failed:', error);
+    console.error('❌ Error fetching existing leads:', error.message);
+    // Return empty set if API fails - better to potentially have duplicates than miss leads
+    console.log('⚠️ Continuing without deduplication due to API error');
+    return new Set();
+  }
+}
+
+/**
+ * Filter out leads that already exist in Instantly
+ * This is the main deduplication function
+ */
+async function filterDuplicateLeads(newLeads, campaignId = null) {
+  console.log(`🔄 Checking ${newLeads.length} new leads against existing Instantly data...`);
+  
+  // Get existing emails from Instantly
+  const existingEmails = await getExistingLeads(campaignId);
+  
+  // Filter out duplicates
+  const uniqueLeads = newLeads.filter(lead => {
+    const email = lead.email?.toLowerCase();
+    return email && !existingEmails.has(email);
+  });
+
+  const duplicatesRemoved = newLeads.length - uniqueLeads.length;
+  
+  if (duplicatesRemoved > 0) {
+    console.log(`🔄 Removed ${duplicatesRemoved} duplicates already in Instantly`);
+    console.log(`💰 Saved ~${duplicatesRemoved} Apollo credits!`);
+  }
+  
+  console.log(`🆕 ${uniqueLeads.length} new leads ready for enrichment`);
+  return uniqueLeads;
+}
+
+/**
+ * Simple function to run and display your campaigns
+ * Run this first to find your campaign IDs
+ */
+async function showMyCampaigns() {
+  console.log('🎯 WellBuiltWeb Campaign Finder');
+  console.log('================================');
+  
+  const campaigns = await getCampaigns();
+  
+  if (campaigns.length > 0) {
+    console.log('\n📋 Copy one of these campaign IDs to use in your lead puller:');
+    campaigns.forEach((campaign, index) => {
+      console.log(`\nCampaign ${index + 1}: ${campaign.name}`);
+      console.log(`📋 ID: ${campaign.id}`);
+      console.log(`Status: ${campaign.status === 1 ? '✅ Active' : '❌ Inactive'}`);
+    });
+    
+    console.log('\n💡 Usage:');
+    console.log('Add this to your Railway environment variables:');
+    console.log('INSTANTLY_CAMPAIGN_ID=<paste_campaign_id_here>');
+  }
+  
+  return campaigns;
+}
+
+/**
+ * Enhanced lead checking that works with your existing Apollo code
+ * Add this to your Apollo class methods
+ */
+async function enhancedGetWeeklyLeadBatch(apolloInstance, batchSize = 100, campaignId = null) {
+  console.log('🎯 Starting enhanced weekly lead pull with Instantly deduplication...');
+  console.log(`📅 Target: ${batchSize} NEW high-quality prospects`);
+  
+  try {
+    // Step 1: Pull more leads from Apollo than we need (accounting for duplicates)
+    const searchBuffer = Math.max(batchSize * 3, 300); // Pull 3x target to account for duplicates
+    console.log(`🔍 Pulling ${searchBuffer} raw leads from Apollo (${batchSize} target after filtering)...`);
+    
+    // Use your existing Apollo search
+    const searchBody = apolloInstance.getWellBuiltWebSearchBody(1, searchBuffer);
+    const response = await apolloInstance.client.post('/mixed_people/search', searchBody);
+    
+    if (!response.data?.people?.length) {
+      console.log('⚠️ No leads found with current criteria');
+      return [];
+    }
+
+    let leads = response.data.people;
+    console.log(`✅ Raw leads pulled from Apollo: ${leads.length}`);
+
+    // Step 2: Apply your existing quality filters
+    leads = apolloInstance.filterWellBuiltWebLeads(leads);
+    console.log(`🎯 Qualified leads after filtering: ${leads.length}`);
+
+    // Step 3: NEW - Remove duplicates against Instantly
+    const newLeads = await filterDuplicateLeads(leads, campaignId);
+
+    if (newLeads.length === 0) {
+      console.log('⚠️ No new leads after deduplication - all were already in Instantly!');
+      console.log('💡 Consider expanding your Apollo search criteria or targeting different markets');
+      return [];
+    }
+
+    // Step 4: Take only what we need for enrichment
+    const leadsToEnrich = newLeads.slice(0, batchSize);
+    if (leadsToEnrich.length < newLeads.length) {
+      console.log(`📊 Taking first ${leadsToEnrich.length} leads for enrichment (${newLeads.length - leadsToEnrich.length} saved for next time)`);
+    }
+
+    // Step 5: Use your existing enrichment
+    console.log('\n🔓 ENRICHING LEADS FOR REAL EMAIL ADDRESSES:');
+    const enrichedLeads = await apolloInstance.enrichLeadsWithEmails(leadsToEnrich);
+
+    if (enrichedLeads.length === 0) {
+      console.log('⚠️ No leads were successfully enriched with real emails');
+      return [];
+    }
+
+    // Step 6: Final deduplication check (in case enrichment revealed different emails)
+    const existingEmails = await getExistingLeads(campaignId);
+    const finalLeads = enrichedLeads.filter(lead => {
+      const email = lead.email?.toLowerCase();
+      return email && !existingEmails.has(email);
+    });
+
+    const enrichmentDuplicates = enrichedLeads.length - finalLeads.length;
+    if (enrichmentDuplicates > 0) {
+      console.log(`🔄 Removed ${enrichmentDuplicates} additional duplicates found after enrichment`);
+    }
+
+    console.log(`\n🎯 FINAL RESULT: ${finalLeads.length} new, enriched leads ready for outreach!`);
+    return finalLeads;
+
+  } catch (error) {
+    console.error('❌ Enhanced weekly batch pull failed:', error.message);
     throw error;
   }
 }
 
-/**
- * Mark leads as contacted after successful email campaign setup
- * This prevents duplicate outreach in future Apollo pulls
- */
-export async function markLeadsAsContacted(successfulLeads) {
-  try {
-    // Simple in-memory tracking for now
-    const contactedEmails = global.contactedEmails || new Set();
-    
-    successfulLeads.forEach(lead => {
-      contactedEmails.add(lead.email.toLowerCase());
-    });
-    
-    global.contactedEmails = contactedEmails;
-    console.log(`📝 Marked ${successfulLeads.length} leads as contacted`);
-    console.log(`📊 Total contacted leads tracked: ${contactedEmails.size}`);
-    
-  } catch (error) {
-    console.error('⚠️ Failed to mark leads as contacted:', error.message);
-  }
-}
+// Export functions for use in your other files
+module.exports = {
+  getCampaigns,
+  getExistingLeads, 
+  filterDuplicateLeads,
+  showMyCampaigns,
+  enhancedGetWeeklyLeadBatch
+};
 
 /**
- * Instantly API V2 Authentication Setup
- * Add this to your .env file:
- * INSTANTLY_API_KEY=your_instantly_api_v2_key_here
- * 
- * NOTE: You need a NEW API key for V2 - the old V1 keys won't work
+ * Quick test script to find your campaigns
+ * Run this independently to see your campaign IDs
  */
+if (require.main === module) {
+  // This runs if you execute this file directly
+  showMyCampaigns()
+    .then(() => {
+      console.log('\n✅ Campaign lookup complete!');
+      process.exit(0);
+    })
+    .catch(error => {
+      console.error('❌ Error:', error.message);
+      process.exit(1);
+    });
+}
