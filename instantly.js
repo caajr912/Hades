@@ -58,52 +58,109 @@ export class InstantlyManager {
       );
       
       const allEmails = new Set();
-      let limit = 100;
       let totalChecked = 0;
-      let hasMore = true;
-      let startingAfter = null;
 
-      while (hasMore) {
-        const params = new URLSearchParams({
-          limit: limit.toString()
-        });
+      if (campaignId) {
+        // Get leads from specific campaign using the correct endpoint
+        try {
+          let limit = 100;
+          let offset = 0;
+          let hasMore = true;
 
-        // Add campaign filter if specified
-        if (campaignId) {
-          params.append('campaign', campaignId);
-        }
+          while (hasMore) {
+            // Use the correct Instantly V2 API endpoint for campaign leads
+            const response = await this.client.get(`/api/v2/campaigns/${campaignId}/leads`, {
+              params: {
+                limit: limit,
+                offset: offset
+              }
+            });
 
-        // Add pagination if we have a starting point
-        if (startingAfter) {
-          params.append('starting_after', startingAfter);
-        }
-
-        const url = `/api/v2/leads?${params}`;
-        const response = await this.client.get(url);
-
-        if (response.data && response.data.length > 0) {
-          response.data.forEach(lead => {
-            if (lead.email) {
-              allEmails.add(lead.email.toLowerCase());
+            if (response.data && response.data.leads && response.data.leads.length > 0) {
+              response.data.leads.forEach(lead => {
+                if (lead.email) {
+                  allEmails.add(lead.email.toLowerCase());
+                }
+              });
+              
+              totalChecked += response.data.leads.length;
+              console.log(`📧 Processed ${totalChecked} existing leads...`);
+              
+              // Check if we got less than the limit (meaning we're at the end)
+              if (response.data.leads.length < limit) {
+                hasMore = false;
+              } else {
+                offset += limit;
+              }
+            } else {
+              hasMore = false;
             }
-          });
-          
-          totalChecked += response.data.length;
-          console.log(`📧 Processed ${totalChecked} existing leads...`);
-          
-          // Check if we got less than the limit (meaning we're at the end)
-          if (response.data.length < limit) {
-            hasMore = false;
-          } else {
-            // Use the last lead's ID for pagination
-            startingAfter = response.data[response.data.length - 1].id;
-          }
-        } else {
-          hasMore = false;
-        }
 
-        // Rate limiting to be nice to the API
-        await new Promise(resolve => setTimeout(resolve, 500));
+            // Rate limiting
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (campaignError) {
+          console.log(`⚠️ Could not fetch leads from campaign ${campaignId}: ${campaignError.message}`);
+          console.log('🔄 Falling back to checking all campaigns...');
+          // Fall through to check all campaigns
+        }
+      }
+
+      // If no campaign specified OR campaign-specific fetch failed, check all campaigns
+      if (!campaignId || allEmails.size === 0) {
+        try {
+          // Get all campaigns first
+          const campaignsResponse = await this.client.get('/api/v2/campaigns');
+          
+          if (campaignsResponse.data && campaignsResponse.data.length > 0) {
+            console.log(`🔍 Checking leads across ${campaignsResponse.data.length} campaigns...`);
+            
+            for (const campaign of campaignsResponse.data) {
+              try {
+                let limit = 100;
+                let offset = 0;
+                let hasMore = true;
+
+                while (hasMore) {
+                  const response = await this.client.get(`/api/v2/campaigns/${campaign.id}/leads`, {
+                    params: {
+                      limit: limit,
+                      offset: offset
+                    }
+                  });
+
+                  if (response.data && response.data.leads && response.data.leads.length > 0) {
+                    response.data.leads.forEach(lead => {
+                      if (lead.email) {
+                        allEmails.add(lead.email.toLowerCase());
+                      }
+                    });
+                    
+                    totalChecked += response.data.leads.length;
+                    
+                    if (response.data.leads.length < limit) {
+                      hasMore = false;
+                    } else {
+                      offset += limit;
+                    }
+                  } else {
+                    hasMore = false;
+                  }
+
+                  // Rate limiting
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                }
+              } catch (campaignLeadsError) {
+                console.log(`⚠️ Could not fetch leads from campaign ${campaign.id}: ${campaignLeadsError.message}`);
+                // Continue with next campaign
+              }
+            }
+            
+            console.log(`📧 Processed ${totalChecked} total existing leads across all campaigns`);
+          }
+        } catch (allCampaignsError) {
+          console.log(`⚠️ Could not fetch campaigns: ${allCampaignsError.message}`);
+        }
       }
 
       console.log(`✅ Found ${allEmails.size} unique emails already in Instantly`);
