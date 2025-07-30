@@ -14,44 +14,42 @@ export class InstantlyManager {
   }
 
   /**
-   * 🆕 NEW: Get all campaigns - V1 API (compatible with existing setup)
+   * 🆕 NEW: Get all campaigns - V2 API (fixed for proper auth)
    */
   async getCampaigns() {
     try {
-      console.log('🔍 Fetching all campaigns from Instantly...');
+      console.log('🔍 Fetching all campaigns from Instantly V2 API...');
       
-      // Try V1 API first (more compatible)
-      const response = await this.client.get('/api/v1/campaign/list', {
-        params: {
-          api_key: this.apiKey
-        }
-      });
+      // V2 API with proper headers
+      const response = await this.client.get('/api/v2/campaigns');
 
-      if (response.data && response.data.length > 0) {
+      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
         console.log(`✅ Found ${response.data.length} campaigns:`);
         
         // Display campaigns in a nice format
         response.data.forEach((campaign, index) => {
           console.log(`${index + 1}. "${campaign.name}" (ID: ${campaign.id})`);
-          console.log(`   Status: ${campaign.status === 'Active' ? 'Active' : 'Inactive'}`);
-          console.log(`   Created: ${campaign.created_at ? new Date(campaign.created_at).toLocaleDateString() : 'Unknown'}`);
+          console.log(`   Status: ${campaign.status === 1 ? 'Active' : 'Inactive'}`);
+          console.log(`   Created: ${new Date(campaign.timestamp_created).toLocaleDateString()}`);
           console.log('   ---');
         });
         
         return response.data;
       } else {
-        console.log('⚠️ No campaigns found in your Instantly account');
+        console.log('⚠️ No campaigns found or unexpected response format');
+        console.log('Response data:', response.data);
         return [];
       }
 
     } catch (error) {
       console.error('❌ Error fetching campaigns:', error.response?.data || error.message);
+      console.log('💡 Make sure you have a V2 API key with campaigns:read scope');
       return [];
     }
   }
 
   /**
-   * 🆕 NEW: Get existing leads - V1 API (compatible with existing setup)
+   * 🆕 NEW: Get existing leads using V2 API with proper endpoints
    */
   async getExistingLeads(campaignId = null) {
     try {
@@ -63,36 +61,58 @@ export class InstantlyManager {
       const allEmails = new Set();
       let totalChecked = 0;
 
-      try {
-        // Use V1 API endpoint that should work with your existing setup
-        const params = {
-          api_key: this.apiKey,
-          limit: 1000,
-          skip: 0
-        };
-
-        if (campaignId) {
-          params.campaign_id = campaignId;
-        }
-
-        const response = await this.client.get('/api/v1/lead/list', { params });
-        
-        if (response.data && response.data.length > 0) {
-          response.data.forEach(lead => {
-            if (lead.email) {
-              allEmails.add(lead.email.toLowerCase());
-            }
+      if (campaignId) {
+        // Try V2 API endpoint for specific campaign leads
+        try {
+          // Use the leads/list POST endpoint which is more reliable in V2
+          const response = await this.client.post('/api/v2/leads/list', {
+            campaign_id: campaignId,
+            limit: 1000
           });
+
+          if (response.data && Array.isArray(response.data)) {
+            response.data.forEach(lead => {
+              if (lead.email) {
+                allEmails.add(lead.email.toLowerCase());
+              }
+            });
+            
+            totalChecked = response.data.length;
+            console.log(`📧 Processed ${totalChecked} existing leads from campaign`);
+          }
+        } catch (campaignError) {
+          console.log(`⚠️ Could not fetch leads from campaign ${campaignId}: ${campaignError.message}`);
+          console.log('🔄 This might be a V1 campaign ID with V2 API key mismatch');
           
-          totalChecked = response.data.length;
-          console.log(`📧 Processed ${totalChecked} existing leads`);
+          // Fallback: check all campaigns instead
+          campaignId = null;
         }
-      } catch (v1Error) {
-        console.log(`⚠️ V1 API failed: ${v1Error.message}`);
-        console.log('🔄 Trying alternative approach...');
-        
-        // Fallback: If V1 fails, we can't check duplicates
-        // But we won't crash the whole process
+      }
+
+      // If no campaign specified OR campaign-specific fetch failed, check all campaigns
+      if (!campaignId) {
+        try {
+          console.log('🔄 Checking leads across all campaigns...');
+          
+          // Get all leads across all campaigns
+          const response = await this.client.post('/api/v2/leads/list', {
+            limit: 1000
+          });
+
+          if (response.data && Array.isArray(response.data)) {
+            response.data.forEach(lead => {
+              if (lead.email) {
+                allEmails.add(lead.email.toLowerCase());
+              }
+            });
+            
+            totalChecked = response.data.length;
+            console.log(`📧 Processed ${totalChecked} existing leads across all campaigns`);
+          }
+        } catch (allLeadsError) {
+          console.log(`⚠️ Could not fetch all leads: ${allLeadsError.message}`);
+          console.log('💡 Make sure you have a V2 API key with leads:read scope');
+        }
       }
 
       console.log(`✅ Found ${allEmails.size} unique emails already in Instantly`);
