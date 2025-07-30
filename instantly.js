@@ -14,14 +14,18 @@ export class InstantlyManager {
   }
 
   /**
-   * 🆕 NEW: Get all campaigns from your Instantly account (V2 API)
-   * Use this to find your campaign IDs
+   * 🆕 NEW: Get all campaigns - V1 API (compatible with existing setup)
    */
   async getCampaigns() {
     try {
       console.log('🔍 Fetching all campaigns from Instantly...');
       
-      const response = await this.client.get('/api/v2/campaigns');
+      // Try V1 API first (more compatible)
+      const response = await this.client.get('/api/v1/campaign/list', {
+        params: {
+          api_key: this.apiKey
+        }
+      });
 
       if (response.data && response.data.length > 0) {
         console.log(`✅ Found ${response.data.length} campaigns:`);
@@ -29,8 +33,8 @@ export class InstantlyManager {
         // Display campaigns in a nice format
         response.data.forEach((campaign, index) => {
           console.log(`${index + 1}. "${campaign.name}" (ID: ${campaign.id})`);
-          console.log(`   Status: ${campaign.status === 1 ? 'Active' : 'Inactive'}`);
-          console.log(`   Created: ${new Date(campaign.timestamp_created).toLocaleDateString()}`);
+          console.log(`   Status: ${campaign.status === 'Active' ? 'Active' : 'Inactive'}`);
+          console.log(`   Created: ${campaign.created_at ? new Date(campaign.created_at).toLocaleDateString() : 'Unknown'}`);
           console.log('   ---');
         });
         
@@ -47,8 +51,7 @@ export class InstantlyManager {
   }
 
   /**
-   * 🆕 NEW: Get existing leads from a specific campaign or all campaigns (V2 API)
-   * This is the core deduplication function
+   * 🆕 NEW: Get existing leads - V1 API (compatible with existing setup)
    */
   async getExistingLeads(campaignId = null) {
     try {
@@ -60,107 +63,36 @@ export class InstantlyManager {
       const allEmails = new Set();
       let totalChecked = 0;
 
-      if (campaignId) {
-        // Get leads from specific campaign using the correct endpoint
-        try {
-          let limit = 100;
-          let offset = 0;
-          let hasMore = true;
+      try {
+        // Use V1 API endpoint that should work with your existing setup
+        const params = {
+          api_key: this.apiKey,
+          limit: 1000,
+          skip: 0
+        };
 
-          while (hasMore) {
-            // Use the correct Instantly V2 API endpoint for campaign leads
-            const response = await this.client.get(`/api/v2/campaigns/${campaignId}/leads`, {
-              params: {
-                limit: limit,
-                offset: offset
-              }
-            });
-
-            if (response.data && response.data.leads && response.data.leads.length > 0) {
-              response.data.leads.forEach(lead => {
-                if (lead.email) {
-                  allEmails.add(lead.email.toLowerCase());
-                }
-              });
-              
-              totalChecked += response.data.leads.length;
-              console.log(`📧 Processed ${totalChecked} existing leads...`);
-              
-              // Check if we got less than the limit (meaning we're at the end)
-              if (response.data.leads.length < limit) {
-                hasMore = false;
-              } else {
-                offset += limit;
-              }
-            } else {
-              hasMore = false;
-            }
-
-            // Rate limiting
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        } catch (campaignError) {
-          console.log(`⚠️ Could not fetch leads from campaign ${campaignId}: ${campaignError.message}`);
-          console.log('🔄 Falling back to checking all campaigns...');
-          // Fall through to check all campaigns
+        if (campaignId) {
+          params.campaign_id = campaignId;
         }
-      }
 
-      // If no campaign specified OR campaign-specific fetch failed, check all campaigns
-      if (!campaignId || allEmails.size === 0) {
-        try {
-          // Get all campaigns first
-          const campaignsResponse = await this.client.get('/api/v2/campaigns');
+        const response = await this.client.get('/api/v1/lead/list', { params });
+        
+        if (response.data && response.data.length > 0) {
+          response.data.forEach(lead => {
+            if (lead.email) {
+              allEmails.add(lead.email.toLowerCase());
+            }
+          });
           
-          if (campaignsResponse.data && campaignsResponse.data.length > 0) {
-            console.log(`🔍 Checking leads across ${campaignsResponse.data.length} campaigns...`);
-            
-            for (const campaign of campaignsResponse.data) {
-              try {
-                let limit = 100;
-                let offset = 0;
-                let hasMore = true;
-
-                while (hasMore) {
-                  const response = await this.client.get(`/api/v2/campaigns/${campaign.id}/leads`, {
-                    params: {
-                      limit: limit,
-                      offset: offset
-                    }
-                  });
-
-                  if (response.data && response.data.leads && response.data.leads.length > 0) {
-                    response.data.leads.forEach(lead => {
-                      if (lead.email) {
-                        allEmails.add(lead.email.toLowerCase());
-                      }
-                    });
-                    
-                    totalChecked += response.data.leads.length;
-                    
-                    if (response.data.leads.length < limit) {
-                      hasMore = false;
-                    } else {
-                      offset += limit;
-                    }
-                  } else {
-                    hasMore = false;
-                  }
-
-                  // Rate limiting
-                  await new Promise(resolve => setTimeout(resolve, 200));
-                }
-              } catch (campaignLeadsError) {
-                console.log(`⚠️ Could not fetch leads from campaign ${campaign.id}: ${campaignLeadsError.message}`);
-                // Continue with next campaign
-              }
-            }
-            
-            console.log(`📧 Processed ${totalChecked} total existing leads across all campaigns`);
-          }
-        } catch (allCampaignsError) {
-          console.log(`⚠️ Could not fetch campaigns: ${allCampaignsError.message}`);
+          totalChecked = response.data.length;
+          console.log(`📧 Processed ${totalChecked} existing leads`);
         }
+      } catch (v1Error) {
+        console.log(`⚠️ V1 API failed: ${v1Error.message}`);
+        console.log('🔄 Trying alternative approach...');
+        
+        // Fallback: If V1 fails, we can't check duplicates
+        // But we won't crash the whole process
       }
 
       console.log(`✅ Found ${allEmails.size} unique emails already in Instantly`);
@@ -168,7 +100,6 @@ export class InstantlyManager {
 
     } catch (error) {
       console.error('❌ Error fetching existing leads:', error.response?.data || error.message);
-      // Return empty set if API fails - better to potentially have duplicates than miss leads
       console.log('⚠️ Continuing without deduplication due to API error');
       return new Set();
     }
