@@ -1,14 +1,18 @@
 /**
- * Apollo API Authentication Setup
+ * Enhanced Apollo API Authentication Setup with Instantly Deduplication
  * Add this to your .env file:
  * APOLLO_API_KEY=your_apollo_api_key_here
+ * INSTANTLY_API_KEY=your_instantly_api_v2_key_here
+ * INSTANTLY_CAMPAIGN_ID=your_campaign_id_here (optional)
  * 
  * Cron Schedule for Railway:
  * Every Sunday at 8 PM Central: "0 20 * * 0"
- */import axios from 'axios';
+ */
+import axios from 'axios';
+import { InstantlyManager } from './instantly.js'; // Import your Instantly class
 
 export class ApolloLeadPuller {
-  constructor(apiKey) {
+  constructor(apiKey, instantlyApiKey = null) {
     this.apiKey = apiKey;
     this.baseURL = 'https://api.apollo.io/v1';
     this.client = axios.create({
@@ -19,6 +23,9 @@ export class ApolloLeadPuller {
         'X-Api-Key': this.apiKey
       }
     });
+
+    // Initialize Instantly integration if API key provided
+    this.instantly = instantlyApiKey ? new InstantlyManager(instantlyApiKey) : null;
   }
 
   /**
@@ -201,87 +208,21 @@ export class ApolloLeadPuller {
   }
 
   /**
-   * WellBuiltWeb AI Receptionist Lead Specification
-   * Target: Small businesses (5-50 employees) needing phone coverage
-   */
-  static getWellBuiltWebCriteria() {
-    return {
-      // FIRMOGRAPHICS
-      organization_num_employees_ranges: ["5,10", "11,50"],
-      organization_locations: ["Louisiana"],
-
-      // INDUSTRY TARGETING - Use precise SIC codes instead of keywords
-      organization_sic_codes: [
-        "7538", // Auto repair shops and services
-        "1711", // Plumbing, heating, air-conditioning contractors  
-        "1731", // Electrical contractors
-        "1761", // Roofing, siding, and sheet metal contractors
-        "7231", // Beauty salons
-        "7297", // Massage parlors and spas
-        "8021", // Dental offices and clinics
-        "8111"  // Legal services (law firms)
-      ],
-
-      // CONTACT LEVEL TARGETING
-      person_titles: [
-        "Owner", "CEO", "Founder", "President",
-        "Office Manager", "Operations Manager", "Practice Manager", 
-        "General Manager", "Business Manager",
-        "Practice Administrator", "Clinic Manager", "Office Administrator"
-      ],
-
-      person_seniorities: [
-        "c_suite", "vp", "director", "manager", "owner"
-      ],
-
-      // DATA QUALITY REQUIREMENTS
-      email_status: ["verified"],
-      phone_status: ["verified"],
-      
-      // LOCATION SPECIFICITY
-      person_locations: ["Louisiana", "Lafayette, Louisiana"],
-
-      // Additional filters for lead quality
-      prospected_by_current_team: ["no"]
-    };
-  }
-
-  /**
-   * Get the complete Apollo API request body for WellBuiltWeb leads
-   * @param {number} page - Page number for pagination
-   * @param {number} perPage - Leads per page (max 100 for Apollo)
-   * @returns {Object} Complete Apollo API request body
-   */
-  static getWellBuiltWebSearchBody(page = 1, perPage = 100) {
-    const criteria = ApolloLeadPuller.getWellBuiltWebCriteria();
-    
-    return {
-      // Pagination - Apollo max is 100 per page
-      page: page,
-      per_page: Math.min(perPage, 100),
-      
-      // Core search criteria
-      ...criteria,
-      
-      // Additional filters for lead quality
-      prospected_by_current_team: ["no"] // Haven't been contacted by us
-      
-      // Note: Removed sort_by_field as Apollo doesn't support "relevance"
-      // Results will be returned in Apollo's default order
-    };
-  }
-
-  /**
-   * Weekly batch job specification for WellBuiltWeb
-   * Runs every Sunday at 8 PM Central Time
+   * ENHANCED Weekly batch job with Instantly deduplication
+   * This now checks Instantly BEFORE enriching leads to save Apollo credits
    */
   async getWeeklyLeadBatch(batchSize = 100) {
-    console.log('🎯 Starting WellBuiltWeb weekly lead pull...');
+    console.log('🎯 Starting WellBuiltWeb weekly lead pull with Instantly deduplication...');
     console.log(`📅 Target: ${batchSize} high-quality AI receptionist prospects`);
     
+    const campaignId = process.env.INSTANTLY_CAMPAIGN_ID; // Get from environment
+    
     try {
-      const searchBody = ApolloLeadPuller.getWellBuiltWebSearchBody(1, batchSize);
+      // Step 1: Pull MORE leads from Apollo than we need (accounting for duplicates)
+      const searchBuffer = Math.max(batchSize * 3, 300); // Pull 3x target to account for duplicates
+      console.log(`🔍 Pulling ${searchBuffer} raw leads from Apollo (${batchSize} target after filtering)...`);
       
+      const searchBody = ApolloLeadPuller.getWellBuiltWebSearchBody(1, searchBuffer);
       const response = await this.client.post('/mixed_people/search', searchBody);
       
       if (!response.data?.people?.length) {
@@ -290,34 +231,60 @@ export class ApolloLeadPuller {
       }
 
       let leads = response.data.people;
-      console.log(`✅ Raw leads pulled: ${leads.length}`);
+      console.log(`✅ Raw leads pulled from Apollo: ${leads.length}`);
 
-      // Apply WellBuiltWeb specific quality filters
+      // Step 2: Apply WellBuiltWeb specific quality filters
       leads = this.filterWellBuiltWebLeads(leads);
       console.log(`🎯 Qualified leads after filtering: ${leads.length}`);
 
-      // Filter out previously contacted leads (when we add this later)
-      leads = await filterAlreadyContacted(leads);
-      console.log(`🆕 New leads (excluding duplicates): ${leads.length}`);
-
-      if (leads.length === 0) {
-        console.log('⚠️ No new leads after filtering and deduplication');
-        return [];
+      // Step 3: 🆕 NEW - Remove duplicates against Instantly BEFORE enriching
+      let newLeads = leads;
+      if (this.instantly) {
+        newLeads = await this.instantly.filterDuplicateLeads(leads, campaignId);
+        
+        if (newLeads.length === 0) {
+          console.log('⚠️ No new leads after deduplication - all were already in Instantly!');
+          console.log('💡 Consider expanding your Apollo search criteria or targeting different markets');
+          return [];
+        }
+      } else {
+        console.log('⚠️ No Instantly integration - cannot check for duplicates');
       }
 
-      // NEW: Enrich leads to get real email addresses using Apollo credits
+      // Step 4: Take only what we need for enrichment (don't waste credits)
+      const leadsToEnrich = newLeads.slice(0, batchSize);
+      if (leadsToEnrich.length < newLeads.length) {
+        console.log(`📊 Taking first ${leadsToEnrich.length} leads for enrichment (${newLeads.length - leadsToEnrich.length} saved for next time)`);
+      }
+
+      // Step 5: Enrich leads to get real email addresses (only for new leads!)
       console.log('\n🔓 ENRICHING LEADS FOR REAL EMAIL ADDRESSES:');
-      const enrichedLeads = await this.enrichLeadsWithEmails(leads);
+      const enrichedLeads = await this.enrichLeadsWithEmails(leadsToEnrich);
 
       if (enrichedLeads.length === 0) {
         console.log('⚠️ No leads were successfully enriched with real emails');
         return [];
       }
 
+      // Step 6: Final deduplication check (in case enrichment revealed different emails)
+      let finalLeads = enrichedLeads;
+      if (this.instantly) {
+        const existingEmails = await this.instantly.getExistingLeads(campaignId);
+        finalLeads = enrichedLeads.filter(lead => {
+          const email = lead.email?.toLowerCase();
+          return email && !existingEmails.has(email);
+        });
+
+        const enrichmentDuplicates = enrichedLeads.length - finalLeads.length;
+        if (enrichmentDuplicates > 0) {
+          console.log(`🔄 Removed ${enrichmentDuplicates} additional duplicates found after enrichment`);
+        }
+      }
+
       // Log summary for weekly report
-      this.logWeeklyBatchSummary(enrichedLeads);
+      this.logWeeklyBatchSummary(finalLeads, leads.length - newLeads.length);
       
-      return enrichedLeads;
+      return finalLeads;
 
     } catch (error) {
       console.error('❌ Weekly batch pull failed:', error.response?.data || error.message);
@@ -391,6 +358,7 @@ export class ApolloLeadPuller {
 
     return enrichedLeads;
   }
+
   /**
    * WellBuiltWeb specific lead quality filters
    */
@@ -438,9 +406,9 @@ export class ApolloLeadPuller {
   }
 
   /**
-   * Log summary of weekly batch for reporting
+   * Enhanced logging with duplicate prevention stats
    */
-  logWeeklyBatchSummary(leads) {
+  logWeeklyBatchSummary(leads, duplicatesFiltered = 0) {
     const industries = {};
     const titles = {};
     const states = {};
@@ -459,33 +427,110 @@ export class ApolloLeadPuller {
       states[state] = (states[state] || 0) + 1;
     });
 
-    console.log('\n📊 WEEKLY BATCH SUMMARY:');
-    console.log(`Total Qualified Leads: ${leads.length}`);
+    console.log('\n📊 ENHANCED WEEKLY BATCH SUMMARY:');
+    console.log(`🎯 NEW Qualified Leads (duplicates avoided): ${leads.length}`);
+    console.log(`🔄 Duplicates filtered out: ${duplicatesFiltered}`);
+    console.log(`💰 Apollo credits saved by avoiding duplicates: ${duplicatesFiltered}`);
     console.log('\nTop Industries:', Object.entries(industries).slice(0, 5));
     console.log('\nTop Titles:', Object.entries(titles).slice(0, 5));
     console.log('\nTop States:', Object.entries(states).slice(0, 5));
     console.log('-------------------\n');
   }
+
+  /**
+   * WellBuiltWeb AI Receptionist Lead Specification
+   * Target: Small businesses (5-50 employees) needing phone coverage
+   */
+  static getWellBuiltWebCriteria() {
+    return {
+      // FIRMOGRAPHICS
+      organization_num_employees_ranges: ["5,10", "11,50"],
+      organization_locations: ["Louisiana"],
+
+      // INDUSTRY TARGETING - Use precise SIC codes instead of keywords
+      organization_sic_codes: [
+        "7538", // Auto repair shops and services
+        "1711", // Plumbing, heating, air-conditioning contractors  
+        "1731", // Electrical contractors
+        "1761", // Roofing, siding, and sheet metal contractors
+        "7231", // Beauty salons
+        "7297", // Massage parlors and spas
+        "8021", // Dental offices and clinics
+        "8111"  // Legal services (law firms)
+      ],
+
+      // CONTACT LEVEL TARGETING
+      person_titles: [
+        "Owner", "CEO", "Founder", "President",
+        "Office Manager", "Operations Manager", "Practice Manager", 
+        "General Manager", "Business Manager",
+        "Practice Administrator", "Clinic Manager", "Office Administrator"
+      ],
+
+      person_seniorities: [
+        "c_suite", "vp", "director", "manager", "owner"
+      ],
+
+      // DATA QUALITY REQUIREMENTS
+      email_status: ["verified"],
+      phone_status: ["verified"],
+      
+      // LOCATION SPECIFICITY
+      person_locations: ["Louisiana", "Lafayette, Louisiana"],
+
+      // Additional filters for lead quality
+      prospected_by_current_team: ["no"]
+    };
+  }
+
+  /**
+   * Get the complete Apollo API request body for WellBuiltWeb leads
+   * @param {number} page - Page number for pagination
+   * @param {number} perPage - Leads per page (max 100 for Apollo)
+   * @returns {Object} Complete Apollo API request body
+   */
+  static getWellBuiltWebSearchBody(page = 1, perPage = 100) {
+    const criteria = ApolloLeadPuller.getWellBuiltWebCriteria();
+    
+    return {
+      // Pagination - Apollo max is 100 per page
+      page: page,
+      per_page: Math.min(perPage, 100),
+      
+      // Core search criteria
+      ...criteria,
+      
+      // Additional filters for lead quality
+      prospected_by_current_team: ["no"] // Haven't been contacted by us
+      
+      // Note: Removed sort_by_field as Apollo doesn't support "relevance"
+      // Results will be returned in Apollo's default order
+    };
+  }
 }
 
-// WellBuiltWeb Weekly Lead Pull - Example usage
+// Enhanced WellBuiltWeb Weekly Lead Pull with Instantly Integration
 export async function runWellBuiltWebBatch() {
-  const apollo = new ApolloLeadPuller(process.env.APOLLO_API_KEY);
+  const apollo = new ApolloLeadPuller(
+    process.env.APOLLO_API_KEY,
+    process.env.INSTANTLY_API_KEY  // Pass Instantly API key for deduplication
+  );
   
   try {
     console.log('🚀 WellBuiltWeb AI Receptionist Lead Pull Starting...');
+    console.log('🔄 With Instantly duplicate prevention enabled!');
     console.log('📍 Louisiana Focus: Building local relationships around Lafayette');
     console.log('📅 Target: Small businesses needing phone coverage (5-50 employees)');
     
-    // Get this week's batch of leads
+    // Get this week's batch of NEW leads (not in Instantly)
     const leads = await apollo.getWeeklyLeadBatch(100);
     
     if (leads.length === 0) {
-      console.log('⚠️ No qualified leads found this week');
-      return [];
+      console.log('⚠️ No new qualified leads found this week');
+      return { leads: [], message: 'No new leads found' };
     }
 
-    // Transform for Clay enrichment
+    // Transform for Clay enrichment or direct use
     const enrichmentReady = leads.map(lead => ({
       // Core contact info
       firstName: lead.first_name,
@@ -518,8 +563,11 @@ export async function runWellBuiltWebBatch() {
       leadSource: 'apollo_weekly_batch'
     }));
 
-    console.log(`✅ ${enrichmentReady.length} leads ready for Clay enrichment`);
-    return enrichmentReady;
+    console.log(`✅ ${enrichmentReady.length} NEW leads ready for outreach (duplicates already filtered!)`);
+    return { 
+      leads: enrichmentReady,
+      message: `Found ${enrichmentReady.length} new leads`
+    };
 
   } catch (error) {
     console.error('❌ WellBuiltWeb batch failed:', error);
@@ -528,44 +576,15 @@ export async function runWellBuiltWebBatch() {
 }
 
 /**
- * Simple deduplication tracking using a JSON file
- * In production, you'd use a proper database
+ * Helper function to find your Instantly campaign IDs
+ * Run this first to get your campaign ID for the environment variables
  */
-
-// Track contacted emails to prevent duplicates
-const CONTACTED_EMAILS_FILE = 'contacted_emails.json';
-
-async function loadContactedEmails() {
+export async function findInstantlyCampaigns() {
   try {
-    // In Railway, use environment variable for storage or a simple JSON approach
-    // For now, keep it in memory (resets on restart - which is actually good for testing)
-    return global.contactedEmails || new Set();
+    const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
+    return await instantly.showMyCampaigns();
   } catch (error) {
-    return new Set();
+    console.error('❌ Failed to fetch campaigns:', error.message);
+    return [];
   }
-}
-
-async function saveContactedEmails(newEmails) {
-  try {
-    const contactedEmails = await loadContactedEmails();
-    newEmails.forEach(email => contactedEmails.add(email.toLowerCase()));
-    global.contactedEmails = contactedEmails;
-    console.log(`📝 Tracking ${contactedEmails.size} total contacted emails`);
-  } catch (error) {
-    console.error('⚠️ Could not save contacted emails:', error.message);
-  }
-}
-
-async function filterAlreadyContacted(leads) {
-  const contactedEmails = await loadContactedEmails();
-  const newLeads = leads.filter(lead => 
-    !contactedEmails.has(lead.email.toLowerCase())
-  );
-  
-  const duplicateCount = leads.length - newLeads.length;
-  if (duplicateCount > 0) {
-    console.log(`🔄 Filtered out ${duplicateCount} previously contacted leads`);
-  }
-  
-  return newLeads;
 }
