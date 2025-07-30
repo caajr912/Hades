@@ -122,4 +122,4 @@ async function discoverCampaigns() {
 main().catch(console.error);
 
 // Uncomment this line if you need to discover your campaign IDs first:
-// discoverCampaigns().catch(console.error);
+discoverCampaigns().catch(console.error);
