@@ -251,6 +251,47 @@ export class ApolloLeadPuller {
 
         let pageLeads = response.data.people;
         console.log(`✅ Raw leads from page ${currentPage}: ${pageLeads.length}`);
+
+        // 🔬 DEBUG: Show first few leads from this page
+        console.log(`🔬 DEBUG: First 5 lead emails from page ${currentPage}:`);
+        pageLeads.slice(0, 5).forEach((lead, i) => {
+          const email = lead.email || 'NO_EMAIL';
+          const name = `${lead.first_name || 'NO_FNAME'} ${lead.last_name || 'NO_LNAME'}`;
+          const company = lead.organization?.name || 'NO_COMPANY';
+          console.log(`   ${i+1}. ${email} - ${name} at ${company}`);
+        });
+
+        // 🔬 DEBUG: Check for lead overlap with previous pages
+        if (currentPage > 1) {
+          const currentPageEmails = new Set(pageLeads.map(lead => lead.email).filter(Boolean));
+          const previousLeadEmails = new Set();
+          
+          // Get all emails from previous pages we've processed
+          allNewLeads.concat(pageLeads).forEach(lead => {
+            if (lead.email) previousLeadEmails.add(lead.email);
+          });
+
+          // Find overlap between this page and all previous leads
+          const overlapCount = [...currentPageEmails].filter(email => 
+            [...existingEmails].includes(email.toLowerCase())
+          ).length;
+          
+          console.log(`🔬 DEBUG: Overlap with existing Instantly leads: ${overlapCount}/${pageLeads.length}`);
+          
+          // Check if this page has leads we've seen on previous pages
+          const seenBefore = pageLeads.filter(lead => 
+            lead.email && [...previousLeadEmails].some(prevEmail => 
+              prevEmail.toLowerCase() === lead.email.toLowerCase()
+            )
+          ).length;
+          
+          if (seenBefore > 0) {
+            console.log(`🔬 DEBUG: ⚠️ ${seenBefore} leads from this page were already seen on previous pages!`);
+          } else {
+            console.log(`🔬 DEBUG: ✅ All leads on this page are new (not seen on previous pages)`);
+          }
+        }
+
         totalProcessed += pageLeads.length;
 
         // Apply quality filters
@@ -268,6 +309,15 @@ export class ApolloLeadPuller {
 
         if (pageDuplicates > 0) {
           console.log(`🔄 Page ${currentPage}: Removed ${pageDuplicates} duplicates`);
+          
+          // 🔬 DEBUG: Show some of the duplicate emails
+          const duplicateEmails = pageLeads
+            .filter(lead => lead.email && existingEmails.has(lead.email.toLowerCase()))
+            .slice(0, 3)
+            .map(lead => lead.email);
+          if (duplicateEmails.length > 0) {
+            console.log(`🔬 DEBUG: Sample duplicates: ${duplicateEmails.join(', ')}`);
+          }
         }
         console.log(`🆕 Page ${currentPage}: ${pageNewLeads.length} new leads found`);
 
