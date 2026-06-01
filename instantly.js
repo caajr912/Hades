@@ -214,12 +214,15 @@ export class InstantlyManager {
             website: lead.website,
             city: lead.city,
             state: lead.state,
-            industry: lead.industry,
-            // Custom variables (API V2 format)
+            industry: lead.industry ?? lead.companyIndustry,
+            skip_if_in_campaign: true,
+            // subject and body are set by compose.js and passed through the queue entry
             custom_variables: {
-              company_size: lead.companySize?.toString() || '',
-              apollo_id: lead.apolloId || '',
-              pull_date: lead.pullDate || new Date().toISOString()
+              subject:      lead.subject ?? '',
+              body:         lead.body    ?? '',
+              company_size: lead.companySize?.toString() ?? '',
+              apollo_id:    lead.apolloId ?? '',
+              pull_date:    lead.pullDate ?? new Date().toISOString()
             }
           };
 
@@ -350,7 +353,7 @@ export class InstantlyManager {
 }
 
 // WellBuiltWeb Instantly Integration - YOUR ORIGINAL FUNCTION
-export async function runWellBuiltWebOutreach(apolloLeads, campaignId = '5cf286eb-6adc-45cc-ba82-d5225f91c3a0') {
+export async function runWellBuiltWebOutreach(apolloLeads, campaignId = null) {
   const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
   
   try {
@@ -432,7 +435,8 @@ export async function runWellBuiltWebOutreachEnhanced(apolloLeads, campaignId = 
   const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
   
   // Use environment variable campaign ID if not provided
-  const targetCampaignId = campaignId || process.env.INSTANTLY_CAMPAIGN_ID || '5cf286eb-6adc-45cc-ba82-d5225f91c3a0';
+  const targetCampaignId = campaignId || process.env.INSTANTLY_CAMPAIGN_ID;
+  if (!targetCampaignId) throw new Error('INSTANTLY_CAMPAIGN_ID is not set');
   
   try {
     console.log('📧 Enhanced Instantly Email Campaign Starting...');

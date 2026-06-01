@@ -1,15 +1,6 @@
-/**
- * Enhanced Apollo API Authentication Setup with Instantly Deduplication
- * Add this to your .env file:
- * APOLLO_API_KEY=your_apollo_api_key_here
- * INSTANTLY_API_KEY=your_instantly_api_v2_key_here
- * INSTANTLY_CAMPAIGN_ID=your_campaign_id_here (optional)
- * 
- * Cron Schedule for Railway:
- * Every Sunday at 8 PM Central: "0 20 * * 0"
- */
 import axios from 'axios';
-import { InstantlyManager } from './instantly.js'; // Import your Instantly class
+import { InstantlyManager } from './instantly.js';
+import { APOLLO_CRITERIA, filterLead } from './config/client.js';
 
 export class ApolloLeadPuller {
   constructor(apiKey, instantlyApiKey = null) {
@@ -24,42 +15,28 @@ export class ApolloLeadPuller {
       }
     });
 
-    // Initialize Instantly integration if API key provided
     this.instantly = instantlyApiKey ? new InstantlyManager(instantlyApiKey) : null;
   }
 
-  /**
-   * Search for people/leads based on criteria
-   * @param {Object} criteria - Search parameters
-   * @param {number} limit - Number of leads to fetch (default: 25, max: 200)
-   * @returns {Promise<Array>} Array of lead objects
-   */
   async searchPeople(criteria, limit = 25) {
     try {
       const response = await this.client.post('/mixed_people/search', {
         ...criteria,
         page: 1,
-        per_page: Math.min(limit, 200) // Apollo max is 200 per request
+        per_page: Math.min(limit, 200)
       });
 
-      if (response.data && response.data.people) {
-        console.log(`✅ Found ${response.data.people.length} leads from Apollo`);
+      if (response.data?.people) {
+        console.log(`Found ${response.data.people.length} leads from Apollo`);
         return response.data.people;
       }
-
       return [];
     } catch (error) {
-      console.error('❌ Apollo search error:', error.response?.data || error.message);
+      console.error('Apollo search error:', error.response?.data || error.message);
       throw new Error(`Apollo search failed: ${error.message}`);
     }
   }
 
-  /**
-   * Search for companies based on criteria
-   * @param {Object} criteria - Company search parameters
-   * @param {number} limit - Number of companies to fetch
-   * @returns {Promise<Array>} Array of company objects
-   */
   async searchCompanies(criteria, limit = 25) {
     try {
       const response = await this.client.post('/mixed_companies/search', {
@@ -68,47 +45,32 @@ export class ApolloLeadPuller {
         per_page: Math.min(limit, 200)
       });
 
-      if (response.data && response.data.organizations) {
-        console.log(`✅ Found ${response.data.organizations.length} companies from Apollo`);
+      if (response.data?.organizations) {
+        console.log(`Found ${response.data.organizations.length} companies from Apollo`);
         return response.data.organizations;
       }
-
       return [];
     } catch (error) {
-      console.error('❌ Apollo company search error:', error.response?.data || error.message);
+      console.error('Apollo company search error:', error.response?.data || error.message);
       throw new Error(`Apollo company search failed: ${error.message}`);
     }
   }
 
-  /**
-   * Get detailed info for specific people by their Apollo IDs
-   * @param {Array} personIds - Array of Apollo person IDs
-   * @returns {Promise<Array>} Array of detailed person objects
-   */
   async getPeopleDetails(personIds) {
     try {
-      const response = await this.client.post('/people/match', {
-        ids: personIds
-      });
+      const response = await this.client.post('/people/match', { ids: personIds });
 
-      if (response.data && response.data.people) {
-        console.log(`✅ Retrieved details for ${response.data.people.length} people`);
+      if (response.data?.people) {
+        console.log(`Retrieved details for ${response.data.people.length} people`);
         return response.data.people;
       }
-
       return [];
     } catch (error) {
-      console.error('❌ Apollo people details error:', error.response?.data || error.message);
+      console.error('Apollo people details error:', error.response?.data || error.message);
       throw new Error(`Apollo people details failed: ${error.message}`);
     }
   }
 
-  /**
-   * Filter leads based on quality criteria
-   * @param {Array} leads - Raw leads from Apollo
-   * @param {Object} filters - Quality filters to apply
-   * @returns {Array} Filtered leads
-   */
   filterLeads(leads, filters = {}) {
     const {
       requireEmail = true,
@@ -121,57 +83,34 @@ export class ApolloLeadPuller {
     } = filters;
 
     return leads.filter(lead => {
-      // Must have email if required
-      if (requireEmail && !lead.email) {
-        return false;
-      }
+      if (requireEmail && !lead.email) return false;
+      if (requireLinkedIn && !lead.linkedin_url) return false;
 
-      // Must have LinkedIn if required
-      if (requireLinkedIn && !lead.linkedin_url) {
-        return false;
-      }
-
-      // Filter out generic emails
       if (excludeGenericEmails && lead.email) {
         const genericPatterns = ['info@', 'contact@', 'hello@', 'support@', 'admin@'];
-        if (genericPatterns.some(pattern => lead.email.toLowerCase().includes(pattern))) {
-          return false;
-        }
+        if (genericPatterns.some(p => lead.email.toLowerCase().includes(p))) return false;
       }
 
-      // Company size filters
       const companySize = lead.organization?.estimated_num_employees;
       if (minEmployees && companySize < minEmployees) return false;
       if (maxEmployees && companySize > maxEmployees) return false;
 
-      // Title filters
       const title = lead.title?.toLowerCase() || '';
-      if (excludeTitles.length && excludeTitles.some(t => title.includes(t.toLowerCase()))) {
-        return false;
-      }
-      if (requiredTitles.length && !requiredTitles.some(t => title.includes(t.toLowerCase()))) {
-        return false;
-      }
+      if (excludeTitles.length && excludeTitles.some(t => title.includes(t.toLowerCase()))) return false;
+      if (requiredTitles.length && !requiredTitles.some(t => title.includes(t.toLowerCase()))) return false;
 
       return true;
     });
   }
 
-  /**
-   * Get leads with pagination support for larger batches
-   * @param {Object} criteria - Search criteria
-   * @param {number} totalLimit - Total number of leads to collect across pages
-   * @returns {Promise<Array>} All collected leads
-   */
   async getAllLeads(criteria, totalLimit = 100) {
     const allLeads = [];
     let currentPage = 1;
-    const perPage = 200; // Max per request
 
     try {
       while (allLeads.length < totalLimit) {
         const remaining = totalLimit - allLeads.length;
-        const pageSize = Math.min(remaining, 100); // Apollo max is 100
+        const pageSize = Math.min(remaining, 100);
 
         const response = await this.client.post('/mixed_people/search', {
           ...criteria,
@@ -180,110 +119,85 @@ export class ApolloLeadPuller {
         });
 
         if (!response.data?.people?.length) {
-          console.log(`📄 No more leads found at page ${currentPage}`);
+          console.log(`No more leads at page ${currentPage}`);
           break;
         }
 
         allLeads.push(...response.data.people);
-        console.log(`📄 Page ${currentPage}: ${response.data.people.length} leads (total: ${allLeads.length})`);
+        console.log(`Page ${currentPage}: ${response.data.people.length} leads (total: ${allLeads.length})`);
 
-        // Check if we've reached the end
-        if (response.data.people.length < pageSize) {
-          break;
-        }
+        if (response.data.people.length < pageSize) break;
 
         currentPage++;
-        
-        // Rate limiting - Apollo has limits
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      console.log(`🎯 Total leads collected: ${allLeads.length}`);
+      console.log(`Total leads collected: ${allLeads.length}`);
       return allLeads.slice(0, totalLimit);
-
     } catch (error) {
-      console.error('❌ Error in getAllLeads:', error.response?.data || error.message);
+      console.error('Error in getAllLeads:', error.response?.data || error.message);
       throw error;
     }
   }
 
-  /**
-   * ENHANCED Weekly batch job with Instantly deduplication AND pagination
-   * This now checks Instantly BEFORE enriching leads to save Apollo credits
-   * AND can pull from multiple Apollo pages to find new leads
-   */
   async getWeeklyLeadBatch(batchSize = 100, maxPages = 5) {
-    console.log('🎯 Starting WellBuiltWeb weekly lead pull with Instantly deduplication + pagination...');
-    console.log(`📅 Target: ${batchSize} high-quality AI receptionist prospects`);
-    console.log(`📄 Will check up to ${maxPages} Apollo pages for new leads`);
-    
-    const campaignId = process.env.INSTANTLY_CAMPAIGN_ID; // Get from environment
-    
+    console.log(`Starting weekly lead pull — target ${batchSize} leads, up to ${maxPages} pages...`);
+
+    const campaignId = process.env.INSTANTLY_CAMPAIGN_ID;
+
     try {
       let allNewLeads = [];
       let currentPage = 1;
       let totalProcessed = 0;
       let totalDuplicates = 0;
 
-      // Step 1: Get existing leads from Instantly ONCE (don't repeat this for each page)
       let existingEmails = new Set();
       if (this.instantly) {
-        console.log('🔍 Getting existing Instantly leads for deduplication...');
+        console.log('Getting existing Instantly leads for deduplication...');
         existingEmails = await this.instantly.getExistingLeads(campaignId);
-        console.log(`🔄 Will filter against ${existingEmails.size} existing emails`);
+        console.log(`Dedup set: ${existingEmails.size} existing emails`);
       }
 
-      // Step 2: Paginate through Apollo until we have enough new leads
       while (allNewLeads.length < batchSize && currentPage <= maxPages) {
-        console.log(`\n📄 === APOLLO PAGE ${currentPage} ===`);
-        
-        // Pull from current Apollo page
-        const searchBuffer = Math.min(200, batchSize * 2); // Pull 2x target per page
-        console.log(`🔍 Pulling ${searchBuffer} leads from Apollo page ${currentPage}...`);
-        
+        console.log(`\n=== Apollo page ${currentPage} ===`);
+
+        const searchBuffer = Math.min(200, batchSize * 2);
+        console.log(`Pulling ${searchBuffer} leads from page ${currentPage}...`);
+
         const searchBody = ApolloLeadPuller.getWellBuiltWebSearchBody(currentPage, searchBuffer);
         const response = await this.client.post('/mixed_people/search', searchBody);
-        
+
         if (!response.data?.people?.length) {
-          console.log(`📄 No more leads found on page ${currentPage} - reached end of results`);
+          console.log(`No more leads on page ${currentPage}`);
           break;
         }
 
         let pageLeads = response.data.people;
-        console.log(`✅ Raw leads from page ${currentPage}: ${pageLeads.length}`);
+        console.log(`Raw leads from page ${currentPage}: ${pageLeads.length}`);
 
-        // 🔓 UNLOCK EMAILS IMMEDIATELY so we can properly deduplicate
-        console.log(`🔓 Unlocking emails for page ${currentPage} leads...`);
+        console.log(`Unlocking emails for page ${currentPage}...`);
         pageLeads = await this.enrichLeadsWithEmails(pageLeads);
-        console.log(`✅ Unlocked ${pageLeads.length} leads with real emails`);
+        console.log(`Unlocked: ${pageLeads.length} leads with real emails`);
 
-        // 🔬 DEBUG: Show first few leads from this page (now with real emails)
-        console.log(`🔬 DEBUG: First 5 unlocked emails from page ${currentPage}:`);
         pageLeads.slice(0, 5).forEach((lead, i) => {
           const email = lead.email || 'NO_EMAIL';
-          const name = `${lead.first_name || 'NO_FNAME'} ${lead.last_name || 'NO_LNAME'}`;
+          const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim();
           const company = lead.organization?.name || 'NO_COMPANY';
-          console.log(`   ${i+1}. ${email} - ${name} at ${company}`);
+          console.log(`  ${i + 1}. ${email} — ${name} at ${company}`);
         });
 
-        // 🔬 DEBUG: Check for lead overlap with existing Instantly leads
         if (currentPage > 1) {
-          const currentPageEmails = new Set(pageLeads.map(lead => lead.email).filter(Boolean));
-          
-          const overlapCount = [...currentPageEmails].filter(email => 
-            existingEmails.has(email.toLowerCase())
-          ).length;
-          
-          console.log(`🔬 DEBUG: Overlap with existing Instantly leads: ${overlapCount}/${pageLeads.length}`);
+          const pageEmails = new Set(pageLeads.map(l => l.email).filter(Boolean));
+          const overlap = [...pageEmails].filter(e => existingEmails.has(e.toLowerCase())).length;
+          console.log(`Overlap with Instantly: ${overlap}/${pageLeads.length}`);
         }
 
         totalProcessed += pageLeads.length;
 
-        // Apply quality filters (after enrichment)
+        // Apply client-specific quality filter
         pageLeads = this.filterWellBuiltWebLeads(pageLeads);
-        console.log(`🎯 Qualified leads after filtering: ${pageLeads.length}`);
+        console.log(`Quality-filtered: ${pageLeads.length} leads`);
 
-        // NOW we can properly filter duplicates against Instantly using real emails
         const pageNewLeads = pageLeads.filter(lead => {
           const email = lead.email?.toLowerCase();
           return email && !existingEmails.has(email);
@@ -293,393 +207,205 @@ export class ApolloLeadPuller {
         totalDuplicates += pageDuplicates;
 
         if (pageDuplicates > 0) {
-          console.log(`🔄 Page ${currentPage}: Removed ${pageDuplicates} real duplicates`);
-          
-          // 🔬 DEBUG: Show some of the actual duplicate emails
-          const duplicateEmails = pageLeads
-            .filter(lead => lead.email && existingEmails.has(lead.email.toLowerCase()))
+          console.log(`Removed ${pageDuplicates} duplicates on page ${currentPage}`);
+          const samples = pageLeads
+            .filter(l => l.email && existingEmails.has(l.email.toLowerCase()))
             .slice(0, 3)
-            .map(lead => lead.email);
-          if (duplicateEmails.length > 0) {
-            console.log(`🔬 DEBUG: Sample real duplicates: ${duplicateEmails.join(', ')}`);
-          }
+            .map(l => l.email);
+          if (samples.length) console.log(`  Sample duplicates: ${samples.join(', ')}`);
         }
-        console.log(`🆕 Page ${currentPage}: ${pageNewLeads.length} truly new leads found`);
+        console.log(`New leads on page ${currentPage}: ${pageNewLeads.length}`);
 
-        // Add new leads to our collection
         allNewLeads.push(...pageNewLeads);
-
-        // Add these new emails to our existing set for future page deduplication
         pageNewLeads.forEach(lead => {
-          if (lead.email) {
-            existingEmails.add(lead.email.toLowerCase());
-          }
+          if (lead.email) existingEmails.add(lead.email.toLowerCase());
         });
 
-        console.log(`📊 Running total: ${allNewLeads.length}/${batchSize} new leads collected`);
+        console.log(`Running total: ${allNewLeads.length}/${batchSize}`);
 
-        // If we have enough, stop here
         if (allNewLeads.length >= batchSize) {
-          console.log(`🎯 Target reached! Collected ${allNewLeads.length} new leads`);
+          console.log(`Target reached — ${allNewLeads.length} new leads collected`);
           break;
         }
 
-        // If this page had very few new leads, we might be hitting saturation
         if (pageNewLeads.length < 5) {
-          console.log(`⚠️ Only ${pageNewLeads.length} new leads on page ${currentPage} - market might be saturated`);
+          console.log(`Only ${pageNewLeads.length} new leads on page ${currentPage} — market may be saturating`);
         }
 
         currentPage++;
-        
-        // Rate limiting between pages
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // Summary of pagination results
-      console.log(`\n📊 PAGINATION SUMMARY:`);
-      console.log(`📄 Pages checked: ${currentPage - 1} of ${maxPages} max`);
-      console.log(`📋 Total leads processed: ${totalProcessed}`);
-      console.log(`🔄 Total real duplicates filtered: ${totalDuplicates}`);
-      console.log(`🆕 New leads found: ${allNewLeads.length}`);
-      console.log(`💰 Apollo credits used for enrichment: ${totalProcessed}`);
-      console.log(`💰 Apollo credits saved by avoiding duplicates: ${totalDuplicates}`);
+      console.log(`\nPagination summary:`);
+      console.log(`  Pages checked: ${currentPage - 1} / ${maxPages}`);
+      console.log(`  Total processed: ${totalProcessed}`);
+      console.log(`  Duplicates filtered: ${totalDuplicates}`);
+      console.log(`  New leads: ${allNewLeads.length}`);
 
       if (allNewLeads.length === 0) {
-        console.log('\n⚠️ No new leads found across all pages!');
-        console.log('💡 Your ideal customer criteria might be fully saturated');
-        console.log('💡 Consider expanding to new markets or adjusting criteria');
+        console.log('No new leads across all pages — criteria may be saturated');
         return [];
       }
 
-      // Since we already enriched during pagination, we don't need to enrich again
-      console.log('\n✅ LEADS ALREADY ENRICHED DURING PAGINATION');
-      console.log('🔓 All leads have real email addresses and have been deduplicated');
-
-      // Final deduplication check against Instantly (shouldn't find any, but just to be safe)
       let finalLeads = allNewLeads;
       if (this.instantly) {
-        const finalExistingEmails = await this.instantly.getExistingLeads(campaignId);
+        const finalExisting = await this.instantly.getExistingLeads(campaignId);
         finalLeads = allNewLeads.filter(lead => {
           const email = lead.email?.toLowerCase();
-          return email && !finalExistingEmails.has(email);
+          return email && !finalExisting.has(email);
         });
-
-        const enrichmentDuplicates = allNewLeads.length - finalLeads.length;
-        if (enrichmentDuplicates > 0) {
-          console.log(`🔄 Removed ${enrichmentDuplicates} additional duplicates in final check`);
-        } else {
-          console.log(`✅ No additional duplicates found in final check`);
-        }
+        const extra = allNewLeads.length - finalLeads.length;
+        if (extra > 0) console.log(`Final dedup pass: removed ${extra} more`);
       }
 
-      // Log summary for weekly report with pagination stats
       this.logWeeklyBatchSummary(finalLeads, totalDuplicates, currentPage - 1);
-      
       return finalLeads;
-
     } catch (error) {
-      console.error('❌ Weekly batch pull failed:', error.response?.data || error.message);
+      console.error('Weekly batch pull failed:', error.response?.data || error.message);
       throw error;
     }
   }
 
-  /**
-   * Enrich leads to get real email addresses (uses Apollo credits)
-   * @param {Array} leads - Raw leads from search
-   * @returns {Promise<Array>} Enriched leads with real emails
-   */
   async enrichLeadsWithEmails(leads) {
-    console.log(`🔓 Enriching ${leads.length} leads to unlock real email addresses...`);
-    console.log(`💳 This will use Apollo credits (you have 2,500 available)`);
-    
+    console.log(`Enriching ${leads.length} leads for email addresses...`);
+
     const enrichedLeads = [];
     let creditsUsed = 0;
-    let enrichmentFailures = 0;
+    let failures = 0;
 
     for (let i = 0; i < leads.length; i++) {
       const lead = leads[i];
-      console.log(`📧 Enriching ${i + 1}/${leads.length}: ${lead.first_name} ${lead.last_name} at ${lead.organization?.name}`);
-      
+      console.log(`  Enriching ${i + 1}/${leads.length}: ${lead.first_name} ${lead.last_name} at ${lead.organization?.name}`);
+
       try {
-        // Use Apollo's People Enrichment endpoint to get real email
         const enrichResponse = await this.client.post('/people/match', {
           first_name: lead.first_name,
           last_name: lead.last_name,
           organization_name: lead.organization?.name,
           domain: lead.organization?.website_url,
-          // Use existing Apollo ID if available for better matching
           id: lead.id
         });
 
-        if (enrichResponse.data && enrichResponse.data.person && enrichResponse.data.person.email) {
-          // Successfully enriched - got real email
-          const enrichedLead = {
+        if (enrichResponse.data?.person?.email) {
+          enrichedLeads.push({
             ...lead,
             email: enrichResponse.data.person.email,
             email_status: enrichResponse.data.person.email_status,
             phone_numbers: enrichResponse.data.person.phone_numbers || lead.phone_numbers,
             enriched: true,
             credits_used: 1
-          };
-          
-          enrichedLeads.push(enrichedLead);
+          });
           creditsUsed++;
-          console.log(`✅ Real email found: ${enrichResponse.data.person.email}`);
+          console.log(`    Found: ${enrichResponse.data.person.email}`);
         } else {
-          // Enrichment didn't return email
-          console.log(`⚠️ No email found during enrichment`);
-          enrichmentFailures++;
+          console.log('    No email found');
+          failures++;
         }
 
-        // Rate limiting to avoid API issues
         await new Promise(resolve => setTimeout(resolve, 500));
-
       } catch (error) {
-        console.error(`❌ Enrichment failed for ${lead.first_name} ${lead.last_name}:`, error.response?.data || error.message);
-        enrichmentFailures++;
+        console.error(`    Failed for ${lead.first_name} ${lead.last_name}:`, error.response?.data || error.message);
+        failures++;
       }
     }
 
-    console.log(`\n🔓 ENRICHMENT SUMMARY:`);
-    console.log(`✅ Successfully enriched: ${enrichedLeads.length} leads`);
-    console.log(`❌ Enrichment failures: ${enrichmentFailures}`);
-    console.log(`💳 Apollo credits used: ${creditsUsed}`);
-    console.log(`💰 Remaining credits: ~${2500 - creditsUsed}`);
-    console.log(`📧 Success rate: ${((enrichedLeads.length / leads.length) * 100).toFixed(1)}%`);
-
+    console.log(`Enrichment: ${enrichedLeads.length} ok, ${failures} failed, ${creditsUsed} credits used`);
     return enrichedLeads;
   }
 
-  /**
-   * WellBuiltWeb specific lead quality filters
-   */
+  /** Client-specific lead quality filter — delegates to config/client.js */
   filterWellBuiltWebLeads(leads) {
-    return leads.filter(lead => {
-      // Skip email verification here since we'll enrich them later
-      // Must have name and company for enrichment
-      if (!lead.first_name || !lead.last_name || !lead.organization?.name) {
-        return false;
-      }
-
-      // Company size validation (5-50 employees) - only if data exists
-      const empCount = lead.organization?.estimated_num_employees;
-      if (empCount && (empCount < 5 || empCount > 50)) {
-        return false;
-      }
-
-      // Exclude organizations that don't need AI receptionists
-      const companyName = (lead.organization?.name || '').toLowerCase();
-      const excludeCompanyTypes = [
-        // Direct competitors
-        'answering', 'call center', 'virtual assistant', 'receptionist service',
-        // Organizations/associations (not target businesses)
-        'association', 'chamber of commerce', 'trade association', 'nonprofit',
-        'foundation', 'institute', 'federation', 'alliance', 'council',
-        // Government/large entities
-        'government', 'municipal', 'state of', 'city of', 'parish of',
-        'university', 'college', 'school district', 'hospital system',
-        // Large corporate/tech
-        'corporation', 'enterprises', 'technologies', 'solutions inc',
-        // Complex care services (high liability/implementation complexity)
-        'care services', 'healthcare', 'home care', 'senior care', 'care',
-        // Manufacturing/industrial (too complex for AI receptionist)
-        'manufacturing', 'industrial', 'fabrication', 'production',
-        // Specialized/hazardous cleaning (requires human expertise)
-        'biohazard', 'trauma cleaning', 'death cleaning', 'crime scene', 'hazmat'
-      ];
-      
-      if (excludeCompanyTypes.some(type => companyName.includes(type))) {
-        return false;
-      }
-
-      return true;
-    });
+    return leads.filter(filterLead);
   }
 
-  /**
-   * Enhanced logging with pagination and duplicate prevention stats
-   */
   logWeeklyBatchSummary(leads, duplicatesFiltered = 0, pagesChecked = 1) {
     const industries = {};
     const titles = {};
     const states = {};
 
     leads.forEach(lead => {
-      // Industry breakdown
       const industry = lead.organization?.industry || 'Unknown';
       industries[industry] = (industries[industry] || 0) + 1;
 
-      // Title breakdown  
       const title = lead.title || 'Unknown';
       titles[title] = (titles[title] || 0) + 1;
 
-      // State breakdown
       const state = lead.state || 'Unknown';
       states[state] = (states[state] || 0) + 1;
     });
 
-    console.log('\n📊 ENHANCED WEEKLY BATCH SUMMARY WITH PAGINATION:');
-    console.log(`🎯 NEW Qualified Leads (duplicates avoided): ${leads.length}`);
-    console.log(`📄 Apollo pages checked: ${pagesChecked}`);
-    console.log(`🔄 Duplicates filtered out: ${duplicatesFiltered}`);
-    console.log(`💰 Apollo credits saved by avoiding duplicates: ${duplicatesFiltered}`);
-    console.log('\nTop Industries:', Object.entries(industries).slice(0, 5));
-    console.log('\nTop Titles:', Object.entries(titles).slice(0, 5));
-    console.log('\nTop States:', Object.entries(states).slice(0, 5));
-    console.log('-------------------\n');
+    console.log('\nWeekly batch summary:');
+    console.log(`  New leads: ${leads.length}`);
+    console.log(`  Pages checked: ${pagesChecked}`);
+    console.log(`  Duplicates filtered: ${duplicatesFiltered}`);
+    console.log('  Top industries:', Object.entries(industries).slice(0, 5));
+    console.log('  Top titles:', Object.entries(titles).slice(0, 5));
+    console.log('  Top states:', Object.entries(states).slice(0, 5));
   }
 
-  /**
-   * WellBuiltWeb AI Receptionist Lead Specification
-   * Target: Small businesses (5-50 employees) needing phone coverage
-   */
+  /** Apollo search criteria — reads from config/client.js */
   static getWellBuiltWebCriteria() {
-    return {
-      // FIRMOGRAPHICS
-      organization_num_employees_ranges: ["5,10", "11,50"],
-      organization_locations: ["Louisiana"],
-
-      // INDUSTRY TARGETING - Use precise SIC codes instead of keywords
-      organization_sic_codes: [
-        "7538", // Auto repair shops and services
-        "1711", // Plumbing, heating, air-conditioning contractors  
-        "1731", // Electrical contractors
-        "1761", // Roofing, siding, and sheet metal contractors
-        "7231", // Beauty salons
-        "7297", // Massage parlors and spas
-        "8021", // Dental offices and clinics
-        "8111"  // Legal services (law firms)
-      ],
-
-      // CONTACT LEVEL TARGETING
-      person_titles: [
-        "Owner", "CEO", "Founder", "President",
-        "Office Manager", "Operations Manager", "Practice Manager", 
-        "General Manager", "Business Manager",
-        "Practice Administrator", "Clinic Manager", "Office Administrator"
-      ],
-
-      person_seniorities: [
-        "c_suite", "vp", "director", "manager", "owner"
-      ],
-
-      // DATA QUALITY REQUIREMENTS
-      email_status: ["verified"],
-      phone_status: ["verified"],
-      
-      // LOCATION SPECIFICITY
-      person_locations: ["Louisiana", "Lafayette, Louisiana"],
-
-      // Additional filters for lead quality
-      prospected_by_current_team: ["no"]
-    };
+    return APOLLO_CRITERIA;
   }
 
-  /**
-   * Get the complete Apollo API request body for WellBuiltWeb leads
-   * @param {number} page - Page number for pagination
-   * @param {number} perPage - Leads per page (max 100 for Apollo)
-   * @returns {Object} Complete Apollo API request body
-   */
   static getWellBuiltWebSearchBody(page = 1, perPage = 100) {
-    const criteria = ApolloLeadPuller.getWellBuiltWebCriteria();
-    
     return {
-      // Pagination - Apollo max is 100 per page
-      page: page,
+      page,
       per_page: Math.min(perPage, 100),
-      
-      // Core search criteria
-      ...criteria,
-      
-      // Additional filters for lead quality
-      prospected_by_current_team: ["no"] // Haven't been contacted by us
-      
-      // Note: Removed sort_by_field as Apollo doesn't support "relevance"
-      // Results will be returned in Apollo's default order
+      ...ApolloLeadPuller.getWellBuiltWebCriteria()
     };
   }
 }
 
-// Enhanced WellBuiltWeb Weekly Lead Pull with Instantly Integration + Pagination
 export async function runWellBuiltWebBatch(maxPages = 5) {
   const apollo = new ApolloLeadPuller(
     process.env.APOLLO_API_KEY,
-    process.env.INSTANTLY_API_KEY  // Pass Instantly API key for deduplication
+    process.env.INSTANTLY_API_KEY
   );
-  
+
   try {
-    console.log('🚀 WellBuiltWeb AI Receptionist Lead Pull Starting...');
-    console.log('🔄 With Instantly duplicate prevention + Apollo pagination enabled!');
-    console.log('📍 Louisiana Focus: Building local relationships around Lafayette');
-    console.log('📅 Target: Small businesses needing phone coverage (5-50 employees)');
-    console.log(`📄 Will check up to ${maxPages} Apollo pages for fresh leads`);
-    
-    // Get this week's batch of NEW leads with pagination (not in Instantly)
+    console.log(`Starting Apollo lead pull — up to ${maxPages} pages...`);
     const leads = await apollo.getWeeklyLeadBatch(100, maxPages);
-    
+
     if (leads.length === 0) {
-      console.log('⚠️ No new qualified leads found across all pages checked');
-      console.log('💡 Your ideal customer criteria are fully saturated');
-      console.log('💡 Consider expanding to new markets or adjusting targeting criteria');
-      return { leads: [], message: 'No new leads found - market saturated' };
+      return { leads: [], message: 'No new leads found' };
     }
 
-    // Transform for Clay enrichment or direct use
     const enrichmentReady = leads.map(lead => ({
-      // Core contact info
-      firstName: lead.first_name,
-      lastName: lead.last_name,
-      email: lead.email,
-      phone: lead.phone_numbers?.[0]?.raw_number,
-      title: lead.title,
-      
-      // Company info
-      companyName: lead.organization?.name,
-      companySize: lead.organization?.estimated_num_employees,
-      industry: lead.organization?.industry,
-      website: lead.organization?.website_url,
-      
-      // Location
-      city: lead.city,
-      state: lead.state,
-      country: lead.country,
-      
-      // Apollo metadata
-      apolloId: lead.id,
-      linkedinUrl: lead.linkedin_url,
-      
-      // Lead scoring data
-      intentScore: lead.buyer_intent_strength_score || 0,
+      firstName:    lead.first_name,
+      lastName:     lead.last_name,
+      email:        lead.email,
+      phone:        lead.phone_numbers?.[0]?.raw_number,
+      title:        lead.title,
+      companyName:  lead.organization?.name,
+      companySize:  lead.organization?.estimated_num_employees,
+      industry:     lead.organization?.industry,
+      website:      lead.organization?.website_url,
+      city:         lead.city,
+      state:        lead.state,
+      country:      lead.country,
+      apolloId:     lead.id,
+      linkedinUrl:  lead.linkedin_url,
+      intentScore:  lead.buyer_intent_strength_score || 0,
       lastActivity: lead.last_activity_date,
-      
-      // For tracking
-      pullDate: new Date().toISOString(),
-      leadSource: 'apollo_weekly_batch_paginated'
+      pullDate:     new Date().toISOString(),
+      leadSource:   'apollo_weekly_batch'
     }));
 
-    console.log(`✅ ${enrichmentReady.length} NEW leads ready for outreach (found via pagination + deduplication!)`);
-    return { 
-      leads: enrichmentReady,
-      message: `Found ${enrichmentReady.length} new leads via pagination`
-    };
-
+    console.log(`${enrichmentReady.length} leads ready for Clay`);
+    return { leads: enrichmentReady, message: `Found ${enrichmentReady.length} new leads` };
   } catch (error) {
-    console.error('❌ WellBuiltWeb batch failed:', error);
+    console.error('Apollo batch failed:', error);
     throw error;
   }
 }
 
-/**
- * Helper function to find your Instantly campaign IDs
- * Run this first to get your campaign ID for the environment variables
- */
 export async function findInstantlyCampaigns() {
   try {
     const instantly = new InstantlyManager(process.env.INSTANTLY_API_KEY);
     return await instantly.showMyCampaigns();
   } catch (error) {
-    console.error('❌ Failed to fetch campaigns:', error.message);
+    console.error('Failed to fetch campaigns:', error.message);
     return [];
   }
 }
