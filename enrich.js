@@ -5,8 +5,9 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const HAIKU = 'claude-haiku-4-5-20251001';
 
 const SCRAPE_TIMEOUT_MS = 5000;
-const MAX_TEXT_CHARS = 8000;
-const CANDIDATE_PATHS = ['', '/about', '/about-us', '/services'];
+const RETRY_TIMEOUT_MS  = 10000;  // one retry with doubled timeout on TIMEOUT failures
+const MAX_TEXT_CHARS    = 8000;
+const CANDIDATE_PATHS   = ['', '/about', '/about-us', '/services'];
 
 const EXTRACTED_FIELDS = [
   'company_description',
@@ -18,15 +19,20 @@ const EXTRACTED_FIELDS = [
   'core_values'
 ];
 
+// ── Scraper ───────────────────────────────────────────────────────────────────
+
 /**
  * Fetch and concatenate text from up to 3 pages of a company's website.
- * Returns '' on any total failure — never throws.
+ * Classifies each page result and retries once on TIMEOUT.
+ * Never throws — returns { text, pages } where pages holds per-page diagnostics.
  *
- * @param {string} rawUrl  company website URL or bare domain
- * @returns {Promise<string>}
+ * page.status values: OK | TIMEOUT | BLOCKED | NOT_FOUND | HTTP_ERR | EMPTY | NET_ERR
+ *
+ * @param {string} rawUrl
+ * @returns {Promise<{ text: string, pages: object[] }>}
  */
 export async function scrapeCompany(rawUrl) {
-  if (!rawUrl) return '';
+  if (!rawUrl) return { text: '', pages: [] };
 
   let base;
   try {
@@ -34,34 +40,63 @@ export async function scrapeCompany(rawUrl) {
     const u = new URL(normalized);
     base = `${u.protocol}//${u.host}`;
   } catch {
-    return '';
+    return { text: '', pages: [{ path: '/', status: 'INVALID_URL' }] };
   }
 
   const chunks = [];
+  const pages  = [];
+
   for (const path of CANDIDATE_PATHS) {
     if (chunks.join(' ').length >= MAX_TEXT_CHARS) break;
-    try {
-      const text = await fetchPageText(`${base}${path}`);
-      if (text) chunks.push(text);
-    } catch {
-      // best-effort: skip failed pages silently
+
+    let result = await fetchPageResult(`${base}${path}`);
+
+    // Retry once on timeout — some sites are slow to respond
+    if (result.status === 'TIMEOUT') {
+      const retry = await fetchPageResult(`${base}${path}`, RETRY_TIMEOUT_MS);
+      result = { ...retry, retried: true };
     }
+
+    pages.push({ path: path || '/', ...result });
+    if (result.text) chunks.push(result.text);
   }
 
-  return chunks.join('\n\n').slice(0, MAX_TEXT_CHARS);
+  const text = chunks.join('\n\n').slice(0, MAX_TEXT_CHARS);
+
+  // One-line diagnostic per domain
+  const pageSummary = pages
+    .map(p => {
+      const label = p.path === '/' ? 'home' : p.path.slice(1);
+      const tag   = p.chars ? `${p.status}(${p.chars})` : p.status;
+      return `${label}=${tag}${p.retried ? '*' : ''}`;
+    })
+    .join(' ');
+  const outcome = text ? `${text.length}ch` : 'EMPTY';
+  console.log(`  scrape ${base}: ${pageSummary} → ${outcome}`);
+
+  return { text, pages };
 }
 
-async function fetchPageText(url) {
+async function fetchPageResult(url, timeoutMs = SCRAPE_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Hades-enricher/1.0)' }
     });
-    if (!res.ok) return '';
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 401) return { text: '', status: 'BLOCKED', chars: 0 };
+      if (res.status === 404)                        return { text: '', status: 'NOT_FOUND', chars: 0 };
+      return { text: '', status: `HTTP${res.status}`, chars: 0 };
+    }
     const html = await res.text();
-    return htmlToText(html);
+    const text = htmlToText(html);
+    if (!text) return { text: '', status: 'EMPTY', chars: 0 };
+    return { text, status: 'OK', chars: text.length };
+  } catch (err) {
+    if (err.name === 'AbortError') return { text: '', status: 'TIMEOUT', chars: 0 };
+    return { text: '', status: 'NET_ERR', chars: 0 };
   } finally {
     clearTimeout(timer);
   }
@@ -73,14 +108,16 @@ function htmlToText(html) {
   return root.text.replace(/\s+/g, ' ').trim();
 }
 
+// ── Extractor ─────────────────────────────────────────────────────────────────
+
 /**
  * Extract enrichment fields from scraped website text using Claude Haiku.
  * Falls back gracefully to Apollo-provided data when text is empty.
  * Returns empty strings for any field not determinable — no fabrication.
  *
- * @param {string} scrapedText  plain text from scrapeCompany()
- * @param {Object} apolloLead   normalized Apollo lead (enrichmentReady shape)
- * @returns {Promise<Object>}   object with EXTRACTED_FIELDS keys
+ * @param {string} scrapedText
+ * @param {Object} apolloLead
+ * @returns {Promise<Object>}
  */
 export async function extractLeadFields(scrapedText, apolloLead) {
   const contextLines = [
@@ -117,7 +154,7 @@ Return only the JSON object, no markdown fences.`
       }]
     });
   } catch (err) {
-    console.warn(`extractLeadFields: Claude call failed for ${apolloLead.companyName ?? 'unknown'}: ${err.message}`);
+    console.warn(`  extract: Claude failed for ${apolloLead.companyName ?? 'unknown'}: ${err.message}`);
     return emptyFields();
   }
 
@@ -128,7 +165,7 @@ Return only the JSON object, no markdown fences.`
       .trim();
     return JSON.parse(cleaned);
   } catch {
-    console.warn(`extractLeadFields: could not parse JSON for ${apolloLead.companyName ?? 'unknown'}`);
+    console.warn(`  extract: bad JSON for ${apolloLead.companyName ?? 'unknown'}`);
     return emptyFields();
   }
 }

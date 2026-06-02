@@ -43,12 +43,29 @@ export async function runPipeline() {
   }
 
   console.log(`Pipeline: enriching ${fresh.length} leads (concurrency ${CONCURRENCY}, threshold ${threshold}/10)...`);
-  const results  = { queued: 0, skipped: 0, failed: 0 };
-  const scoreLog = [];   // collect all scores for the summary table
+  const results    = { queued: 0, skipped: 0, failed: 0 };
+  const scoreLog   = [];
+  const scrapeStats = { ok: 0, empty: 0, timeout: 0, blocked: 0, netErr: 0, noUrl: 0 };
 
   await runConcurrent(fresh, CONCURRENCY, async (lead) => {
     try {
-      const scrapedText = await scrapeCompany(lead.website);
+      const { text: scrapedText, pages: scrapePages } = await scrapeCompany(lead.website);
+
+      // Classify this domain's overall scrape outcome for the summary
+      if (!lead.website) {
+        scrapeStats.noUrl++;
+      } else if (scrapePages.some(p => p.status === 'OK')) {
+        scrapeStats.ok++;
+      } else if (scrapePages.some(p => p.status === 'TIMEOUT')) {
+        scrapeStats.timeout++;
+      } else if (scrapePages.some(p => p.status === 'BLOCKED')) {
+        scrapeStats.blocked++;
+      } else if (scrapePages.some(p => p.status === 'NET_ERR')) {
+        scrapeStats.netErr++;
+      } else {
+        scrapeStats.empty++;
+      }
+
       const extracted   = await extractLeadFields(scrapedText, lead);
       const normalized  = normalizeClayRow({ ...lead, ...extracted });
       const fit         = scoreLead(normalized);
@@ -79,7 +96,14 @@ export async function runPipeline() {
     console.log(formatScoreRow(lead, fit, status));
   }
 
-  console.log(`\nPipeline complete — queued: ${results.queued}, skipped: ${results.skipped}, failed: ${results.failed}`);
+  const scrapeTotal = Object.values(scrapeStats).reduce((a, b) => a + b, 0);
+  console.log(
+    `\nScrape stats (${scrapeTotal} domains): ` +
+    `${scrapeStats.ok} OK, ${scrapeStats.empty} empty parse, ` +
+    `${scrapeStats.timeout} timeout, ${scrapeStats.blocked} blocked, ` +
+    `${scrapeStats.netErr} net-err, ${scrapeStats.noUrl} no URL`
+  );
+  console.log(`Pipeline complete — queued: ${results.queued}, skipped: ${results.skipped}, failed: ${results.failed}`);
   return results;
 }
 
