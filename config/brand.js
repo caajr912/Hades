@@ -75,7 +75,7 @@ compelling, let them do the work.`,
   ],
 
   lengthLimits: {
-    subjectMaxChars: 65,
+    subjectMaxChars: 75,
     bodyMaxWords:    175   // compliance footer words not counted (added post-check)
   },
 

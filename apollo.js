@@ -175,6 +175,7 @@ export class ApolloLeadPuller {
         let pageLeads = response.data.people;
         console.log(`Raw leads from page ${currentPage}: ${pageLeads.length}`);
 
+
         console.log(`Unlocking emails for page ${currentPage}...`);
         pageLeads = await this.enrichLeadsWithEmails(pageLeads);
         console.log(`Unlocked: ${pageLeads.length} leads with real emails`);
@@ -275,28 +276,28 @@ export class ApolloLeadPuller {
 
     for (let i = 0; i < leads.length; i++) {
       const lead = leads[i];
-      console.log(`  Enriching ${i + 1}/${leads.length}: ${lead.first_name} ${lead.last_name} at ${lead.organization?.name}`);
+      console.log(`  Enriching ${i + 1}/${leads.length}: ${lead.first_name} at ${lead.organization?.name}`);
 
       try {
+        // Match by Apollo ID — most reliable; search results stub last_name and domain
         const enrichResponse = await this.client.post('/people/match', {
+          id: lead.id,
           first_name: lead.first_name,
-          last_name: lead.last_name,
-          organization_name: lead.organization?.name,
-          domain: lead.organization?.website_url,
-          id: lead.id
+          organization_name: lead.organization?.name
         });
 
-        if (enrichResponse.data?.person?.email) {
+        const person = enrichResponse.data?.person;
+        if (person?.email) {
+          // Spread the full enriched person so last_name, city, state, headline,
+          // seniority, and organization (website, industry, description, etc.) all populate.
           enrichedLeads.push({
             ...lead,
-            email: enrichResponse.data.person.email,
-            email_status: enrichResponse.data.person.email_status,
-            phone_numbers: enrichResponse.data.person.phone_numbers || lead.phone_numbers,
+            ...person,
             enriched: true,
             credits_used: 1
           });
           creditsUsed++;
-          console.log(`    Found: ${enrichResponse.data.person.email}`);
+          console.log(`    Found: ${person.email}`);
         } else {
           console.log('    No email found');
           failures++;
@@ -304,7 +305,7 @@ export class ApolloLeadPuller {
 
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
-        console.error(`    Failed for ${lead.first_name} ${lead.last_name}:`, error.response?.data || error.message);
+        console.error(`    Failed for ${lead.first_name} at ${lead.organization?.name}:`, error.response?.data || error.message);
         failures++;
       }
     }
