@@ -80,13 +80,21 @@ ${examplesText}`;
 
 function buildLeadBlock(lead) {
   const lines = [];
-  if (lead.companyName)          lines.push(`Business: ${lead.companyName}`);
-  if (lead.companyIndustry)      lines.push(`Industry: ${lead.companyIndustry}`);
-  if (lead.city || lead.state)   lines.push(`Location: ${[lead.city, lead.state].filter(Boolean).join(', ')}`);
-  if (lead.companyDescription)   lines.push(`About: ${lead.companyDescription}`);
-  if (lead.googleRating)         lines.push(`Google rating: ${lead.googleRating} (${lead.googleReviewCount ?? '?'} reviews)`);
-  if (lead.recentReviewSnippet)  lines.push(`Recent review: "${lead.recentReviewSnippet}"`);
-  if (lead.speciesOrActivities)  lines.push(`Species / activities: ${lead.speciesOrActivities}`);
+
+  // Company
+  if (lead.companyName)        lines.push(`Business: ${lead.companyName}`);
+  if (lead.companyIndustry)    lines.push(`Industry: ${lead.companyIndustry}`);
+  if (lead.city || lead.state) lines.push(`Location: ${[lead.city, lead.state].filter(Boolean).join(', ')}`);
+  if (lead.companyDescription) lines.push(`About: ${lead.companyDescription}`);
+  if (lead.companyFoundedYear) lines.push(`Founded: ${lead.companyFoundedYear}`);
+
+  // Contact (decision-maker context — not addressed in the email by name, but informs tone)
+  if (lead.title)            lines.push(`Contact title: ${lead.title}`);
+  if (lead.linkedinHeadline) lines.push(`Contact headline: ${lead.linkedinHeadline}`);
+  if (lead.seniority)        lines.push(`Seniority: ${lead.seniority}`);
+
+  // Outdoor-specific enrichment
+  if (lead.speciesOrActivities) lines.push(`Species / activities: ${lead.speciesOrActivities}`);
   if (lead.season)               lines.push(`Season: ${lead.season}`);
   if (lead.yearsInBusiness)      lines.push(`In business since: ${lead.yearsInBusiness}`);
   if (lead.productCategory)      lines.push(`Product category: ${lead.productCategory}`);
@@ -94,6 +102,7 @@ function buildLeadBlock(lead) {
   if (lead.recentLaunches)       lines.push(`Recent launches: ${lead.recentLaunches}`);
   if (lead.socialFollowing)      lines.push(`Social following: ${lead.socialFollowing}`);
   if (lead.coreValues)           lines.push(`Brand values: ${lead.coreValues}`);
+
   return lines.join('\n') || `Business: ${lead.companyName ?? 'unknown'}`;
 }
 

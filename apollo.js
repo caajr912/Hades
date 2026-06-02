@@ -372,20 +372,31 @@ export async function runWellBuiltWebBatch(maxPages = 5) {
     }
 
     const enrichmentReady = leads.map(lead => ({
+      // Person
       firstName:    lead.first_name,
       lastName:     lead.last_name,
       email:        lead.email,
       phone:        lead.phone_numbers?.[0]?.raw_number,
       title:        lead.title,
-      companyName:  lead.organization?.name,
-      companySize:  lead.organization?.estimated_num_employees,
-      industry:     lead.organization?.industry,
-      website:      lead.organization?.website_url,
-      city:         lead.city,
-      state:        lead.state,
-      country:      lead.country,
-      apolloId:     lead.id,
       linkedinUrl:  lead.linkedin_url,
+      headline:     lead.headline ?? '',
+      seniority:    lead.seniority ?? '',
+
+      // Company
+      companyName:         lead.organization?.name,
+      companySize:         lead.organization?.estimated_num_employees,
+      industry:            lead.organization?.industry,
+      website:             lead.organization?.website_url,
+      companyDescription:  lead.organization?.short_description ?? lead.organization?.description ?? '',
+      companyFoundedYear:  lead.organization?.founded_year ?? null,
+
+      // Location
+      city:    lead.city,
+      state:   lead.state,
+      country: lead.country,
+
+      // Metadata
+      apolloId:     lead.id,
       intentScore:  lead.buyer_intent_strength_score || 0,
       lastActivity: lead.last_activity_date,
       pullDate:     new Date().toISOString(),

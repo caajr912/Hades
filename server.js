@@ -1,34 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
 import cron from 'node-cron';
-import { runApolloToClay, handleEnrichedLead, sendApprovedLead } from './pipeline.js';
-import { verifyClaySignature } from './clay.js';
+import { runPipeline, sendApprovedLead } from './pipeline.js';
 import { listQueue, reviewEntry } from './queue.js';
 
 const app = express();
+app.use(express.json());
 
-// Capture raw body for Clay signature verification before JSON parsing
-app.use(express.json({
-  verify: (req, _res, buf) => { req.rawBody = buf; }
-}));
-
-// ── Health ──────────────────────────────────────────────────────────────────
+// ── Health ────────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
-});
-
-// ── Clay webhook ──────────────────────────────────────────────────────────────
-app.post('/webhooks/clay', async (req, res) => {
-  if (!verifyClaySignature(req)) {
-    return res.status(401).json({ error: 'Invalid signature' });
-  }
-  // Acknowledge immediately so Clay does not time out and retry
-  res.json({ received: true });
-  try {
-    await handleEnrichedLead(req.body);
-  } catch (err) {
-    console.error('handleEnrichedLead error:', err.message);
-  }
 });
 
 // ── Review queue ──────────────────────────────────────────────────────────────
@@ -45,7 +26,6 @@ app.get('/queue', async (req, res) => {
   }
 });
 
-// Approve a draft and push it to Instantly
 app.post('/queue/:id/approve', async (req, res) => {
   try {
     const entry = await reviewEntry(req.params.id, 'approved');
@@ -58,7 +38,6 @@ app.post('/queue/:id/approve', async (req, res) => {
   }
 });
 
-// Reject a draft — marks it rejected, nothing sent
 app.post('/queue/:id/reject', async (req, res) => {
   try {
     const entry = await reviewEntry(req.params.id, 'rejected');
@@ -70,12 +49,12 @@ app.post('/queue/:id/reject', async (req, res) => {
 });
 
 // ── Cron ──────────────────────────────────────────────────────────────────────
-// Weekly Apollo → Clay pull: every Sunday at 8 PM Central.
-// Set TZ=America/Chicago on Railway, or adjust the expression to UTC ("0 1 * * 1").
+// Weekly Apollo pull: every Sunday at 8 PM Central.
+// Set TZ=America/Chicago on Railway, or adjust to UTC ("0 1 * * 1").
 cron.schedule('0 20 * * 0', async () => {
-  console.log('Cron: weekly Apollo pull starting...');
+  console.log('Cron: weekly pipeline starting...');
   try {
-    await runApolloToClay();
+    await runPipeline();
   } catch (err) {
     console.error('Cron error:', err.message);
   }

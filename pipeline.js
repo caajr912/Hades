@@ -1,46 +1,50 @@
 import { runWellBuiltWebBatch } from './apollo.js';
-import { pushToClay, normalizeClayRow } from './clay.js';
+import { normalizeClayRow } from './clay.js';
+import { scrapeCompany, extractLeadFields } from './enrich.js';
 import { composeDraft } from './compose.js';
 import { enqueue } from './queue.js';
 import { InstantlyManager } from './instantly.js';
 
+const CONCURRENCY = 5;
+
 /**
- * Weekly cron job: pull leads from Apollo, dedup against Instantly, push to Clay.
- * Clay enriches each row asynchronously and POSTs back to /webhooks/clay.
+ * Weekly job: pull leads from Apollo, scrape + AI-enrich each one, compose a
+ * draft email, and hold it in the review queue pending human approval.
  */
-export async function runApolloToClay() {
+export async function runPipeline() {
   const maxPages = parseInt(process.env.APOLLO_MAX_PAGES ?? '5', 10);
   console.log('Pipeline: starting Apollo pull...');
   const { leads } = await runWellBuiltWebBatch(maxPages);
+
   if (!leads?.length) {
-    console.log('Pipeline: no new leads to push to Clay.');
-    return { sent: 0, failed: 0 };
+    console.log('Pipeline: no new leads found.');
+    return { queued: 0, failed: 0 };
   }
-  console.log(`Pipeline: pushing ${leads.length} leads to Clay...`);
-  return pushToClay(leads);
+
+  console.log(`Pipeline: enriching ${leads.length} leads (concurrency ${CONCURRENCY})...`);
+  const results = { queued: 0, failed: 0 };
+
+  await runConcurrent(leads, CONCURRENCY, async (lead) => {
+    try {
+      const scrapedText = await scrapeCompany(lead.website);
+      const extracted   = await extractLeadFields(scrapedText, lead);
+      const normalized  = normalizeClayRow({ ...lead, ...extracted });
+      const draft       = await composeDraft(normalized);
+      const entry       = await enqueue(normalized, draft);
+      console.log(`Queued ${entry.id} — ${normalized.email} — "${draft.subject}"`);
+      results.queued++;
+    } catch (err) {
+      console.error(`Lead failed (${lead.email ?? 'no email'}): ${err.message}`);
+      results.failed++;
+    }
+  });
+
+  console.log(`Pipeline complete — queued: ${results.queued}, failed: ${results.failed}`);
+  return results;
 }
 
 /**
- * Clay webhook callback: compose a full email draft and hold it in the review queue.
- * Nothing is sent to Instantly until the draft is approved via POST /queue/:id/approve.
- */
-export async function handleEnrichedLead(row) {
-  const lead = normalizeClayRow(row);
-  if (!lead.email) {
-    console.warn('handleEnrichedLead: skipping row with no email');
-    return;
-  }
-
-  console.log(`Composing draft for ${lead.email}...`);
-  const draft = await composeDraft(lead);
-  const entry = await enqueue(lead, draft);
-
-  console.log(`Queued draft ${entry.id} — pending review`);
-  console.log(`  Subject: "${draft.subject}"`);
-}
-
-/**
- * Send an approved queue entry to Instantly.
+ * Send an approved queue entry to Instantly (and eventually HubSpot).
  * Called by POST /queue/:id/approve in server.js.
  */
 export async function sendApprovedLead(entry) {
@@ -59,4 +63,13 @@ export async function sendApprovedLead(entry) {
 
 async function upsertHubSpotContact(_lead) {
   // TODO: POST /crm/v3/objects/contacts — Phase 1 step 4
+}
+
+async function runConcurrent(items, limit, fn) {
+  const queue = [...items];
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => { while (queue.length) await fn(queue.shift()); }
+  );
+  await Promise.all(workers);
 }
