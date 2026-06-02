@@ -2,7 +2,7 @@ import { runWellBuiltWebBatch } from './apollo.js';
 import { normalizeClayRow } from './clay.js';
 import { scrapeCompany, extractLeadFields } from './enrich.js';
 import { composeDraft } from './compose.js';
-import { enqueue } from './queue.js';
+import { enqueue, getProcessedKeys } from './queue.js';
 import { InstantlyManager } from './instantly.js';
 
 const CONCURRENCY = 5;
@@ -21,10 +21,25 @@ export async function runPipeline() {
     return { queued: 0, failed: 0 };
   }
 
-  console.log(`Pipeline: enriching ${leads.length} leads (concurrency ${CONCURRENCY})...`);
+  const processed = await getProcessedKeys();
+  const fresh = leads.filter(lead => {
+    if (lead.email    && processed.has(lead.email.toLowerCase())) return false;
+    if (lead.apolloId && processed.has(lead.apolloId))            return false;
+    return true;
+  });
+
+  if (fresh.length < leads.length) {
+    console.log(`Pipeline: skipped ${leads.length - fresh.length} already-processed lead(s).`);
+  }
+  if (!fresh.length) {
+    console.log('Pipeline: all leads already processed.');
+    return { queued: 0, failed: 0 };
+  }
+
+  console.log(`Pipeline: enriching ${fresh.length} leads (concurrency ${CONCURRENCY})...`);
   const results = { queued: 0, failed: 0 };
 
-  await runConcurrent(leads, CONCURRENCY, async (lead) => {
+  await runConcurrent(fresh, CONCURRENCY, async (lead) => {
     try {
       const scrapedText = await scrapeCompany(lead.website);
       const extracted   = await extractLeadFields(scrapedText, lead);

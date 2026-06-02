@@ -16,6 +16,20 @@ async function writeQueue(entries) {
   await fs.writeFile(QUEUE_FILE, JSON.stringify(entries, null, 2), 'utf8');
 }
 
+/**
+ * Return a Set of all emails and apolloIds already in the queue (any status).
+ * Used by the pipeline to skip leads that were processed in a prior run.
+ */
+export async function getProcessedKeys() {
+  const entries = await readQueue();
+  const keys = new Set();
+  for (const e of entries) {
+    if (e.lead?.email)    keys.add(e.lead.email.toLowerCase());
+    if (e.lead?.apolloId) keys.add(e.lead.apolloId);
+  }
+  return keys;
+}
+
 /** Add a composed draft to the queue with status "pending". */
 export async function enqueue(lead, draft) {
   const entries = await readQueue();
