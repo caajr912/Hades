@@ -97,6 +97,7 @@ export function normalizeClayRow(row) {
     audiencePositioning:  row.audience_positioning    ?? row.audiencePositioning  ?? '',
     recentLaunches:       row.recent_launches         ?? row.recentLaunches       ?? '',
     socialFollowing:      row.social_following        ?? row.socialFollowing       ?? '',
+    coreValues:           row.core_values             ?? row.coreValues            ?? '',
 
     // Metadata
     apolloId:  row.apollo_id ?? row.apolloId ?? '',

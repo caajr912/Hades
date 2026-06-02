@@ -93,6 +93,7 @@ function buildLeadBlock(lead) {
   if (lead.audiencePositioning)  lines.push(`Audience / positioning: ${lead.audiencePositioning}`);
   if (lead.recentLaunches)       lines.push(`Recent launches: ${lead.recentLaunches}`);
   if (lead.socialFollowing)      lines.push(`Social following: ${lead.socialFollowing}`);
+  if (lead.coreValues)           lines.push(`Brand values: ${lead.coreValues}`);
   return lines.join('\n') || `Business: ${lead.companyName ?? 'unknown'}`;
 }
 
