@@ -80,6 +80,26 @@ export async function enqueueHold(lead, reason) {
   return entry;
 }
 
+/**
+ * Immediately reject a draft — it's visible via GET /queue?status=rejected
+ * but cannot be approved. Used for auto-detected thin-data/fallback emails.
+ */
+export async function enqueueRejected(lead, draft, reason) {
+  const entries = await readQueue();
+  const entry = {
+    id:           randomUUID(),
+    status:       'rejected',
+    rejectReason: reason,
+    lead,
+    draft,
+    createdAt:    new Date().toISOString(),
+    reviewedAt:   new Date().toISOString()
+  };
+  entries.push(entry);
+  await writeQueue(entries);
+  return entry;
+}
+
 /** Add a composed draft to the queue with status "pending". */
 export async function enqueue(lead, draft) {
   const entries = await readQueue();

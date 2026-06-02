@@ -23,17 +23,26 @@ const GUIDE_LODGE = [
   'deer camp', 'elk camp', 'bear camp', 'dove field'
 ];
 
-// Specific species — strong signal regardless of business type
+// Specific species — require compound phrases or unambiguous terms to avoid
+// collisions with "bass guitar", "duck brand", "bear market", "turkey (food)", etc.
 const SPECIES = [
+  // Deer / big game — unambiguous
   'whitetail', 'mule deer', 'blacktail', 'elk', 'moose', 'caribou',
   'pronghorn', 'antelope', 'bison', 'buffalo',
-  'bear', 'mountain lion', 'cougar', 'wild boar', 'feral hog',
-  'turkey', 'pheasant', 'quail', 'grouse', 'chukar', 'partridge',
-  'duck', 'goose', 'waterfowl', 'dove', 'snipe', 'woodcock',
-  'trout', 'salmon', 'steelhead', 'bass', 'walleye', 'pike', 'muskie',
-  'catfish', 'crappie', 'bluegill', 'perch', 'carp',
-  'tarpon', 'bonefish', 'redfish', 'snook', 'permit', 'tuna',
-  'marlin', 'sailfish', 'mahi', 'wahoo', 'halibut', 'striper', 'flounder',
+  // Bear / predators — require context
+  'bear hunting', 'bear guide', 'bear hunt',
+  'mountain lion', 'cougar', 'wild boar', 'feral hog',
+  // Upland / waterfowl — require hunting context for ambiguous terms
+  'turkey hunting', 'wild turkey hunt',
+  'pheasant', 'quail', 'grouse', 'chukar', 'partridge',
+  'duck hunting', 'duck blind', 'goose hunting',
+  'waterfowl', 'dove hunting', 'snipe', 'woodcock',
+  // Fish — require fishing context for ambiguous terms like "bass", "tuna", "marlin"
+  'trout', 'salmon', 'steelhead',
+  'bass fishing', 'largemouth', 'smallmouth', 'striped bass', 'spotted bass',
+  'walleye', 'pike', 'muskie', 'catfish', 'crappie', 'bluegill', 'perch', 'carp',
+  'tarpon', 'bonefish', 'redfish', 'snook', 'permit',
+  'tuna fishing', 'marlin fishing', 'mahi', 'wahoo', 'halibut', 'striper', 'flounder',
   'fly fish', 'fly fishing', 'fly rod', 'fly tying', 'wading', 'waders'
 ];
 
@@ -53,14 +62,14 @@ const GEAR = [
   'kayak fish', 'fishing kayak', 'bass boat', 'drift boat'
 ];
 
-// Audience / positioning signals — who their customers are
+// Audience / positioning signals — who their customers are.
+// Removed 'passionate' and 'dedicated' — too generic (music schools, gyms, etc.).
 const AUDIENCE = [
   'sportsman', 'sportsmen', 'sportswomen',
   'hunter', 'hunters', 'angler', 'anglers',
   'affluent', 'luxury', 'premium', 'high-end', 'upscale', 'discerning',
   'serious hunter', 'serious angler', 'avid hunter', 'avid angler',
-  'passionate', 'dedicated', 'hardcore',
-  'trophy', 'conservation', 'wildlife', 'wild game',
+  'hardcore', 'trophy', 'conservation', 'wildlife', 'wild game',
   'outdoor enthusiast', 'outdoor lifestyle'
 ];
 
@@ -86,10 +95,39 @@ function buildText(lead) {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
+// ── Completeness gate ─────────────────────────────────────────────────────────
+
+/**
+ * True if the lead has enough extracted enrichment data to produce a reliable
+ * fit score. Leads that fail this check are held for retry rather than scored
+ * on incomplete data — which would produce unpredictable verdicts.
+ *
+ * Requires at least one of:
+ *   - companyDescription with ≥ 20 chars (excludes trivial stub values)
+ *   - any domain-specific extracted field (species, product, audience, years)
+ *
+ * Intentionally does NOT count companyIndustry (Apollo generic label) or
+ * companyName alone — those aren't enough signal to score reliably.
+ *
+ * @param {Object} lead  normalized lead from normalizeClayRow()
+ * @returns {boolean}
+ */
+export function isEnrichmentComplete(lead) {
+  const descOk    = (lead.companyDescription?.trim().length ?? 0) >= 20;
+  const hasField  = !!(
+    lead.speciesOrActivities?.trim() ||
+    lead.productCategory?.trim()     ||
+    lead.audiencePositioning?.trim() ||
+    lead.yearsInBusiness?.trim()
+  );
+  return descOk || hasField;
+}
+
 // ── Scorer ────────────────────────────────────────────────────────────────────
 
 /**
  * Score an enriched, normalized lead for fit with Elite Compass.
+ * Only call this after isEnrichmentComplete() returns true.
  *
  * @param {Object} lead  normalized lead from normalizeClayRow()
  * @returns {{ total: number, breakdown: Object, matched: string[], richFields: number }}
@@ -105,28 +143,28 @@ export function scoreLead(lead) {
   // ── Vertical (0–4): what the business actually does ──────────────────────
   let vertical = 0;
   if (guideLodgeMatches.length > 0) {
-    vertical = 4;                                  // guide / lodge / outfitter
+    vertical = 4;
   } else if (speciesMatches.length >= 2) {
-    vertical = 4;                                  // strongly species-driven
+    vertical = 4;
   } else if (speciesMatches.length === 1) {
-    vertical = 3;                                  // one species mention
+    vertical = 3;
   } else if (gearMatches.length >= 2) {
-    vertical = 3;                                  // gear / apparel / optics brand
+    vertical = 3;
   } else if (gearMatches.length === 1) {
-    vertical = 2;                                  // single gear mention
+    vertical = 2;
   } else if (
     text.includes('outdoor') ||
     text.includes('sporting goods') ||
     text.includes('recreation') ||
     text.includes('adventure')
   ) {
-    vertical = 1;                                  // generic outdoor / recreation
+    vertical = 1;
   }
 
   // ── Audience (0–3): overlap with Elite Compass readers ───────────────────
   let audience = 0;
-  const hasSpecies   = speciesMatches.length > 0;
-  const hasAudience  = audienceMatches.length > 0;
+  const hasSpecies  = speciesMatches.length > 0;
+  const hasAudience = audienceMatches.length > 0;
 
   if (audienceMatches.length >= 2 || (hasSpecies && hasAudience)) {
     audience = 3;
@@ -150,14 +188,13 @@ export function scoreLead(lead) {
   const dataDepth = richFields >= 3 ? 2 : richFields >= 1 ? 1 : 0;
 
   // ── Commercial viability (0–1) ────────────────────────────────────────────
-  const nameAndDesc = `${lead.companyName ?? ''} ${lead.companyDescription ?? ''}`.toLowerCase();
+  const nameAndDesc   = `${lead.companyName ?? ''} ${lead.companyDescription ?? ''}`.toLowerCase();
   const nonCommercial = ['nonprofit', 'non-profit', 'foundation', 'association',
                          '501(c)', 'government', 'municipal', 'university', 'college'];
-  const commercial = nonCommercial.some(kw => nameAndDesc.includes(kw)) ? 0 : 1;
+  const commercial    = nonCommercial.some(kw => nameAndDesc.includes(kw)) ? 0 : 1;
 
   const total = vertical + audience + dataDepth + commercial;
 
-  // Top matched keywords for display (deduplicated, capped at 5)
   const matched = [...new Set([
     ...guideLodgeMatches,
     ...speciesMatches,
@@ -176,10 +213,6 @@ export function scoreLead(lead) {
 /**
  * Would this lead potentially pass the threshold if a scrape had succeeded?
  * Used to distinguish genuine no-fit from scrape-failure-induced low score.
- *
- * @param {Object} fit        result from scoreLead()
- * @param {number} threshold  FIT_THRESHOLD
- * @returns {boolean}
  */
 export function couldPassWithBetterData(fit, threshold) {
   const maxDataDepth = 2;
@@ -188,13 +221,24 @@ export function couldPassWithBetterData(fit, threshold) {
 
 /**
  * Format a score row for the summary table.
+ * meta: { scrapeOkPages, totalPages, enrichmentComplete }
  */
-export function formatScoreRow(lead, fit, status) {
-  const { total, breakdown: b } = fit;
-  const label  = status === 'PASS' ? 'PASS'
-               : status === 'HOLD' ? 'HOLD'
-               : 'SKIP';
-  const kws    = fit.matched.length ? fit.matched.join(', ') : 'no keyword match';
-  const name   = (lead.companyName ?? lead.email ?? '?').slice(0, 32).padEnd(32);
-  return `  ${label} ${total}/10 [V:${b.vertical} A:${b.audience} D:${b.dataDepth} C:${b.commercial}]  ${name}  ${kws}`;
+export function formatScoreRow(lead, fit, status, meta = {}) {
+  const { scrapeOkPages = null, totalPages = null, enrichmentComplete = null } = meta;
+
+  const label = ({ PASS: 'PASS', HOLD: 'HOLD', RJCT: 'RJCT' })[status] ?? 'SKIP';
+
+  const scoreStr = fit
+    ? `${fit.total}/10 [V:${fit.breakdown.vertical} A:${fit.breakdown.audience} D:${fit.breakdown.dataDepth} C:${fit.breakdown.commercial}]`
+    : `-- /10 [not scored]            `;
+
+  const kws  = fit?.matched.length ? fit.matched.join(', ') : '';
+  const name = (lead.companyName ?? lead.email ?? '?').slice(0, 28).padEnd(28);
+
+  const scrapeTag  = totalPages !== null ? ` scrape:${scrapeOkPages}/${totalPages}pg` : '';
+  const enrichTag  = enrichmentComplete !== null
+    ? (enrichmentComplete ? ' enrich:OK' : ' enrich:EMPTY')
+    : '';
+
+  return `  ${label} ${scoreStr}  ${name}  ${kws}${scrapeTag}${enrichTag}`;
 }
