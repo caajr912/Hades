@@ -66,6 +66,7 @@ HARD RULES
 - Body: ≤${bp.lengthLimits.bodyMaxWords} words
 - Never use: ${bp.bannedPhrases.map(p => `"${p}"`).join(', ')}
 - Do not include a sign-off, signature, or compliance footer — added separately by the system
+- ALWAYS return the JSON object — even if lead data is sparse, write the best email you can from what is provided. Never respond with prose, questions, or explanations.
 
 SENDER
 ${sender.name}, ${sender.title}, ${sender.company}
@@ -111,13 +112,18 @@ function buildLeadBlock(lead) {
 // ---------------------------------------------------------------------------
 
 function parseResponse(text) {
-  // Strip markdown fences Claude may include despite instructions
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  // 1. Strip markdown fences
+  let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
   let parsed;
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    throw new Error(`compose: Claude response is not valid JSON.\nRaw:\n${text}`);
+    // 2. Claude sometimes adds a prose prefix before the JSON object; extract the first {...}
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { parsed = JSON.parse(match[0]); } catch { /* fall through */ }
+    }
+    if (!parsed) throw new Error(`compose: Claude response is not valid JSON.\nRaw:\n${text}`);
   }
   if (!parsed.subject || !parsed.body) {
     throw new Error(`compose: JSON missing required fields.\nParsed: ${JSON.stringify(parsed)}`);
