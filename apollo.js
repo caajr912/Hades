@@ -20,7 +20,7 @@ export class ApolloLeadPuller {
 
   async searchPeople(criteria, limit = 25) {
     try {
-      const response = await this.client.post('/mixed_people/search', {
+      const response = await this.client.post('/mixed_people/api_search', {
         ...criteria,
         page: 1,
         per_page: Math.min(limit, 200)
@@ -112,7 +112,7 @@ export class ApolloLeadPuller {
         const remaining = totalLimit - allLeads.length;
         const pageSize = Math.min(remaining, 100);
 
-        const response = await this.client.post('/mixed_people/search', {
+        const response = await this.client.post('/mixed_people/api_search', {
           ...criteria,
           page: currentPage,
           per_page: pageSize
@@ -165,7 +165,7 @@ export class ApolloLeadPuller {
         console.log(`Pulling ${searchBuffer} leads from page ${currentPage}...`);
 
         const searchBody = ApolloLeadPuller.getWellBuiltWebSearchBody(currentPage, searchBuffer);
-        const response = await this.client.post('/mixed_people/search', searchBody);
+        const response = await this.client.post('/mixed_people/api_search', searchBody);
 
         if (!response.data?.people?.length) {
           console.log(`No more leads on page ${currentPage}`);

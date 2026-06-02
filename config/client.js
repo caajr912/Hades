@@ -41,7 +41,9 @@ export const APOLLO_CRITERIA = {
 
   person_seniorities: ['c_suite', 'vp', 'director', 'manager', 'owner'],
 
-  // SIC codes for hunting/fishing/outdoor-recreation verticals
+  // SIC codes for hunting/fishing/outdoor-recreation verticals.
+  // Dropped 5040 (Professional Equipment) and 5065 (Electronic Parts) — too generic.
+  // Outdoor keyword check in filterLead() narrows the broad codes (e.g. 7999, 7011).
   organization_sic_codes: [
     '7999', // Amusement & Recreation Services (guided hunts, fishing charters)
     '0971', // Hunting, Trapping & Game Propagation
@@ -49,9 +51,7 @@ export const APOLLO_CRITERIA = {
     '7011', // Hotels & Motels (hunting/fishing lodges)
     '5091', // Sporting & Recreation Goods — wholesale
     '5941', // Sporting Goods Stores — retail
-    '5699', // Apparel & Accessory Stores NEC (outdoor/camo apparel)
-    '5040', // Professional & Commercial Equipment (optics, gear)
-    '5065'  // Electronic Parts (trail cameras, GPS devices)
+    '5699'  // Apparel & Accessory Stores NEC (outdoor/camo apparel)
   ],
 
   // US-wide — advertisers are national or regional, not geo-restricted
@@ -66,13 +66,35 @@ export const APOLLO_CRITERIA = {
 // Return true to keep, false to drop.
 // ---------------------------------------------------------------------------
 
+// Keywords checked against company name + industry + Apollo keywords array.
+// Any single match is enough to pass. Keeps the filter broad enough not to
+// miss small operators whose Apollo profile is thin.
+const OUTDOOR_KEYWORDS = [
+  'hunting', 'hunt', 'fisher', 'fishing', 'angler', 'angling',
+  'outfitter', 'lodge', 'ranch', 'guide service', 'guided',
+  'fly fish', 'fly rod', 'tackle', 'wildlife',
+  'whitetail', 'elk', 'mule deer', 'waterfowl', 'pheasant', 'turkey',
+  'archery', 'bow hunt', 'rifle', 'shotgun',
+  'optic', 'scope', 'rangefinder', 'binocular',
+  'camo', 'camouflage', 'blaze orange',
+  'hunting gear', 'hunting apparel', 'outdoor apparel'
+];
+
 export function filterLead(lead) {
-  // Must have enough data for Clay enrichment
-  if (!lead.first_name || !lead.last_name || !lead.organization?.name) return false;
+  if (!lead.first_name || !lead.organization?.name) return false;
 
-  const name = (lead.organization?.name ?? '').toLowerCase();
+  const org = lead.organization ?? {};
+  const searchText = [
+    org.name,
+    org.industry,
+    org.short_description,
+    ...(Array.isArray(org.keywords) ? org.keywords : [])
+  ].join(' ').toLowerCase();
 
-  // Drop big-box / mass-market retailers — they don't need a boutique magazine ad
+  // Must mention the outdoor vertical somewhere in Apollo's data
+  if (!OUTDOOR_KEYWORDS.some(kw => searchText.includes(kw))) return false;
+
+  // Drop big-box / mass-market retailers
   const excluded = [
     'bass pro', "bass pro shops", 'cabelas', "cabela's",
     'academy sports', "dick's sporting", 'dicks sporting goods',
@@ -83,6 +105,7 @@ export function filterLead(lead) {
     'university', 'college', 'school district'
   ];
 
+  const name = org.name.toLowerCase();
   if (excluded.some(p => name.includes(p))) return false;
 
   return true;
