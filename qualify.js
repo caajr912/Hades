@@ -174,11 +174,26 @@ export function scoreLead(lead) {
 }
 
 /**
+ * Would this lead potentially pass the threshold if a scrape had succeeded?
+ * Used to distinguish genuine no-fit from scrape-failure-induced low score.
+ *
+ * @param {Object} fit        result from scoreLead()
+ * @param {number} threshold  FIT_THRESHOLD
+ * @returns {boolean}
+ */
+export function couldPassWithBetterData(fit, threshold) {
+  const maxDataDepth = 2;
+  return (fit.total + (maxDataDepth - fit.breakdown.dataDepth)) >= threshold;
+}
+
+/**
  * Format a score row for the summary table.
  */
 export function formatScoreRow(lead, fit, status) {
   const { total, breakdown: b } = fit;
-  const label  = status === 'PASS' ? 'PASS' : 'SKIP';
+  const label  = status === 'PASS' ? 'PASS'
+               : status === 'HOLD' ? 'HOLD'
+               : 'SKIP';
   const kws    = fit.matched.length ? fit.matched.join(', ') : 'no keyword match';
   const name   = (lead.companyName ?? lead.email ?? '?').slice(0, 32).padEnd(32);
   return `  ${label} ${total}/10 [V:${b.vertical} A:${b.audience} D:${b.dataDepth} C:${b.commercial}]  ${name}  ${kws}`;

@@ -1,9 +1,9 @@
 import { runWellBuiltWebBatch } from './apollo.js';
 import { normalizeClayRow } from './clay.js';
 import { scrapeCompany, extractLeadFields } from './enrich.js';
-import { scoreLead, formatScoreRow } from './qualify.js';
+import { scoreLead, formatScoreRow, couldPassWithBetterData } from './qualify.js';
 import { composeDraft } from './compose.js';
-import { enqueue, getProcessedKeys } from './queue.js';
+import { enqueue, enqueueHold, getProcessedKeys } from './queue.js';
 import { InstantlyManager } from './instantly.js';
 
 const CONCURRENCY = 5;
@@ -43,7 +43,7 @@ export async function runPipeline() {
   }
 
   console.log(`Pipeline: enriching ${fresh.length} leads (concurrency ${CONCURRENCY}, threshold ${threshold}/10)...`);
-  const results    = { queued: 0, skipped: 0, failed: 0 };
+  const results    = { queued: 0, skipped: 0, held: 0, failed: 0 };
   const scoreLog   = [];
   const scrapeStats = { ok: 0, empty: 0, timeout: 0, blocked: 0, netErr: 0, noUrl: 0 };
 
@@ -71,8 +71,19 @@ export async function runPipeline() {
       const fit         = scoreLead(normalized);
 
       if (fit.total < threshold) {
-        scoreLog.push({ lead: normalized, fit, status: 'SKIP' });
-        results.skipped++;
+        const scrapeOk     = scrapePages.some(p => p.status === 'OK');
+        const scrapeFailed = !scrapeOk && !!lead.website;
+
+        if (scrapeFailed && couldPassWithBetterData(fit, threshold)) {
+          // Below threshold only because scrape failed — hold for retry
+          const holdReason = scrapePages.map(p => `${p.path}:${p.status}`).join(' ');
+          await enqueueHold(normalized, holdReason);
+          scoreLog.push({ lead: normalized, fit, status: 'HOLD' });
+          results.held++;
+        } else {
+          scoreLog.push({ lead: normalized, fit, status: 'SKIP' });
+          results.skipped++;
+        }
         return;
       }
 
@@ -103,7 +114,7 @@ export async function runPipeline() {
     `${scrapeStats.timeout} timeout, ${scrapeStats.blocked} blocked, ` +
     `${scrapeStats.netErr} net-err, ${scrapeStats.noUrl} no URL`
   );
-  console.log(`Pipeline complete — queued: ${results.queued}, skipped: ${results.skipped}, failed: ${results.failed}`);
+  console.log(`Pipeline complete — queued: ${results.queued}, skipped: ${results.skipped}, held: ${results.held} (scrape failed, will retry), failed: ${results.failed}`);
   return results;
 }
 

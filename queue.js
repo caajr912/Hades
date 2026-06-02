@@ -17,17 +17,67 @@ async function writeQueue(entries) {
 }
 
 /**
- * Return a Set of all emails and apolloIds already in the queue (any status).
- * Used by the pipeline to skip leads that were processed in a prior run.
+ * Return a Set of all emails and apolloIds already processed.
+ * Excludes 'hold' entries — they are eligible for retry on the next run.
  */
 export async function getProcessedKeys() {
   const entries = await readQueue();
   const keys = new Set();
   for (const e of entries) {
+    if (e.status === 'hold') continue;
     if (e.lead?.email)    keys.add(e.lead.email.toLowerCase());
     if (e.lead?.apolloId) keys.add(e.lead.apolloId);
   }
   return keys;
+}
+
+const MAX_HOLD_ATTEMPTS = 3;
+
+/**
+ * Hold a lead whose scrape failed — it may be a real fit but couldn't be
+ * enriched. Excluded from processedKeys so the next pull retries it.
+ * After MAX_HOLD_ATTEMPTS failures the entry is marked 'rejected' so it
+ * stops retrying.
+ *
+ * @param {Object} lead    normalized lead
+ * @param {string} reason  short description of why it's held
+ */
+export async function enqueueHold(lead, reason) {
+  const entries = await readQueue();
+  const idx = entries.findIndex(
+    e => e.status === 'hold' &&
+         (e.lead?.email === lead.email || e.lead?.apolloId === lead.apolloId)
+  );
+
+  if (idx !== -1) {
+    const attempts = (entries[idx].attempts ?? 1) + 1;
+    if (attempts >= MAX_HOLD_ATTEMPTS) {
+      entries[idx].status     = 'rejected';
+      entries[idx].holdReason = `${reason} — exhausted after ${attempts} attempts`;
+      entries[idx].reviewedAt = new Date().toISOString();
+      console.log(`  Hold exhausted (${attempts}x) — permanently skipping ${lead.email ?? lead.apolloId}`);
+    } else {
+      entries[idx].attempts    = attempts;
+      entries[idx].lastAttempt = new Date().toISOString();
+    }
+    await writeQueue(entries);
+    return entries[idx];
+  }
+
+  const entry = {
+    id:          randomUUID(),
+    status:      'hold',
+    holdReason:  reason,
+    attempts:    1,
+    lead,
+    draft:       null,
+    createdAt:   new Date().toISOString(),
+    lastAttempt: new Date().toISOString(),
+    reviewedAt:  null
+  };
+  entries.push(entry);
+  await writeQueue(entries);
+  return entry;
 }
 
 /** Add a composed draft to the queue with status "pending". */

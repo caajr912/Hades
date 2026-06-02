@@ -14,12 +14,15 @@ app.get('/health', (_req, res) => {
 
 // ── Review queue ──────────────────────────────────────────────────────────────
 
-// GET /queue          → pending drafts
-// GET /queue?status=all → all drafts
+// GET /queue                → pending drafts
+// GET /queue?status=hold    → scrape-failed leads held for retry
+// GET /queue?status=all     → every entry regardless of status
+// GET /queue?status=<other> → filter by that status string
 app.get('/queue', async (req, res) => {
   try {
-    const status = req.query.status === 'all' ? null : 'pending';
-    const entries = await listQueue(status);
+    const { status } = req.query;
+    const filter = status === 'all' ? null : (status ?? 'pending');
+    const entries = await listQueue(filter);
     res.json({ count: entries.length, entries });
   } catch (err) {
     res.status(500).json({ error: err.message });
