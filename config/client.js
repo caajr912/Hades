@@ -57,6 +57,17 @@ export const APOLLO_CRITERIA = {
   // US-wide — advertisers are national or regional, not geo-restricted
   person_locations: ['United States'],
 
+  // Keyword search applied at the Apollo level — filters company profiles before
+  // we spend email-unlock credits. Broad enough not to miss small operators whose
+  // Apollo profile only has "fly fishing guide" or "hunting outfitter".
+  // Apollo treats this as OR across the keyword terms.
+  q_organization_keyword_tags: [
+    'hunting', 'fishing', 'outfitter', 'fly fishing', 'hunting lodge',
+    'fishing lodge', 'hunting ranch', 'guided hunting', 'guided fishing',
+    'hunting gear', 'fishing tackle', 'waterfowl', 'big game hunting',
+    'outdoor apparel', 'hunting apparel'
+  ],
+
   email_status: ['verified'],
   prospected_by_current_team: ['no']
 };
@@ -66,18 +77,35 @@ export const APOLLO_CRITERIA = {
 // Return true to keep, false to drop.
 // ---------------------------------------------------------------------------
 
-// Keywords checked against company name + industry + Apollo keywords array.
-// Any single match is enough to pass. Keeps the filter broad enough not to
-// miss small operators whose Apollo profile is thin.
-const OUTDOOR_KEYWORDS = [
-  'hunting', 'hunt', 'fisher', 'fishing', 'angler', 'angling',
-  'outfitter', 'lodge', 'ranch', 'guide service', 'guided',
-  'fly fish', 'fly rod', 'tackle', 'wildlife',
-  'whitetail', 'elk', 'mule deer', 'waterfowl', 'pheasant', 'turkey',
-  'archery', 'bow hunt', 'rifle', 'shotgun',
-  'optic', 'scope', 'rangefinder', 'binocular',
+// Tier 1 — unambiguous hunting/fishing signals. One match passes.
+// Avoids false positives from "Adventure Hunt", guided bus tours, ranch
+// restaurants, entertainment venues with archery tags, etc.
+const TIER1_KEYWORDS = [
+  // Business type — unambiguous
+  'outfitter', 'guide service', 'guided hunt', 'guided fish', 'guided fly',
+  'hunting lodge', 'fishing lodge', 'hunt club', 'fish camp',
+  'hunting ranch', 'hunting camp', 'game ranch', 'hunting club',
+  // Core activity — compound or unambiguous
+  'hunting', 'fishing', 'angling', 'angler', 'fisher',
+  'fly fish', 'fly rod', 'fly fishing',
+  'waterfowl', 'pheasant', 'whitetail', 'mule deer',
+  'turkey hunt', 'duck hunt', 'dove hunt', 'bow hunt',
+  'elk hunt', 'elk camp', 'elk guide',
+  // Gear/retail — specific enough to signal the vertical
+  'hunting gear', 'hunting apparel', 'hunting boot', 'hunting pack',
+  'fishing tackle', 'fishing rod', 'fishing reel', 'fishing lure',
+  'trail camera', 'game camera', 'game call', 'duck blind',
+  'hunting knife', 'field dressing', 'taxidermy'
+];
+
+// Tier 2 — contextual signals. Two matches required to pass without a Tier 1.
+// Prevents any single ambiguous term from letting in gyms, tour buses, etc.
+const TIER2_KEYWORDS = [
+  'outdoor', 'lodge', 'ranch', 'wildlife', 'sportsman', 'sportsmen',
+  'archery', 'rifle', 'shotgun', 'firearm', 'ammunition',
   'camo', 'camouflage', 'blaze orange',
-  'hunting gear', 'hunting apparel', 'outdoor apparel'
+  'optic', 'scope', 'rangefinder', 'binocular',
+  'guided', 'conservation', 'game preserve', 'game bird'
 ];
 
 export function filterLead(lead) {
@@ -91,8 +119,10 @@ export function filterLead(lead) {
     ...(Array.isArray(org.keywords) ? org.keywords : [])
   ].join(' ').toLowerCase();
 
-  // Must mention the outdoor vertical somewhere in Apollo's data
-  if (!OUTDOOR_KEYWORDS.some(kw => searchText.includes(kw))) return false;
+  const tier1 = TIER1_KEYWORDS.filter(kw => searchText.includes(kw));
+  const tier2 = TIER2_KEYWORDS.filter(kw => searchText.includes(kw));
+
+  if (!tier1.length && tier2.length < 2) return false;
 
   // Drop big-box / mass-market retailers
   const excluded = [
