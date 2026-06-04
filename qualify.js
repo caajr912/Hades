@@ -226,7 +226,7 @@ export function couldPassWithBetterData(fit, threshold) {
 export function formatScoreRow(lead, fit, status, meta = {}) {
   const { scrapeOkPages = null, totalPages = null, enrichmentComplete = null } = meta;
 
-  const label = ({ PASS: 'PASS', HOLD: 'HOLD', RJCT: 'RJCT' })[status] ?? 'SKIP';
+  const label = ({ PASS: 'PASS', HOLD: 'HOLD', RJCT: 'RJCT', DUPE: 'DUPE' })[status] ?? 'SKIP';
 
   const scoreStr = fit
     ? `${fit.total}/10 [V:${fit.breakdown.vertical} A:${fit.breakdown.audience} D:${fit.breakdown.dataDepth} C:${fit.breakdown.commercial}]`

@@ -3,10 +3,48 @@ import { normalizeClayRow } from './clay.js';
 import { scrapeCompany, extractLeadFields } from './enrich.js';
 import { scoreLead, formatScoreRow, couldPassWithBetterData, isEnrichmentComplete } from './qualify.js';
 import { composeDraft } from './compose.js';
-import { enqueue, enqueueHold, enqueueRejected, getProcessedKeys } from './queue.js';
+import { enqueue, enqueueHold, enqueueRejected, getProcessedKeys, getQueuedCompanyKeys, normalizeCompanyKey, deduplicateQueueByCompany, backfillFlags } from './queue.js';
 import { InstantlyManager } from './instantly.js';
 
 const CONCURRENCY = 5;
+
+// ── Company dedup helpers ─────────────────────────────────────────────────────
+
+// Higher number = prefer this contact when multiple from the same company pass.
+const SENIORITY_RANK = { owner: 6, c_suite: 5, vp: 4, director: 3, manager: 2, senior: 1 };
+
+function seniorityScore(lead) {
+  const s = (lead.seniority ?? '').toLowerCase();
+  if (SENIORITY_RANK[s] !== undefined) return SENIORITY_RANK[s];
+  const t = (lead.title ?? '').toLowerCase();
+  if (/\b(owner|co-owner|outfitter)\b/.test(t))    return 6;
+  if (/\b(founder|co-founder)\b/.test(t))           return 6;
+  if (/\b(ceo|coo|cfo|president|chief)\b/.test(t)) return 5;
+  if (/\bvp\b|vice.president/.test(t))              return 4;
+  if (/\bdirector\b/.test(t))                       return 3;
+  if (/\bmanager\b/.test(t))                        return 2;
+  return 0;
+}
+
+// ── Domain mismatch helpers ───────────────────────────────────────────────────
+
+function extractDomain(url) {
+  if (!url) return '';
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`)
+      .hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return url.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
+  }
+}
+
+function detectDomainMismatch(lead) {
+  const emailDomain = lead.email?.split('@')[1]?.toLowerCase() ?? '';
+  const siteDomain  = extractDomain(lead.website);
+  if (!emailDomain || !siteDomain) return null;
+  if (emailDomain === siteDomain) return null;
+  return { type: 'domain_mismatch', emailDomain, siteDomain };
+}
 
 /**
  * Weekly job: pull leads from Apollo, scrape + AI-enrich each one, score fit,
@@ -19,6 +57,15 @@ export async function runPipeline() {
   const maxPages     = parseInt(process.env.APOLLO_MAX_PAGES  ?? '5', 10);
   const threshold    = parseInt(process.env.FIT_THRESHOLD     ?? '6', 10);
 
+  const cleaned  = await deduplicateQueueByCompany(seniorityScore);
+  if (cleaned > 0) console.log(`Pipeline: cleaned ${cleaned} company-duplicate entry(s) from queue.`);
+
+  const flagged = await backfillFlags(lead => {
+    const m = detectDomainMismatch(lead);
+    return m ? [m] : [];
+  });
+  if (flagged > 0) console.log(`Pipeline: backfilled domain-mismatch flags on ${flagged} existing entry(s).`);
+
   console.log('Pipeline: starting Apollo pull...');
   const { leads } = await runWellBuiltWebBatch(maxPages);
 
@@ -27,7 +74,9 @@ export async function runPipeline() {
     return { queued: 0, skipped: 0, failed: 0 };
   }
 
-  const processed = await getProcessedKeys();
+  const processed       = await getProcessedKeys();
+  const queuedCompanies = await getQueuedCompanyKeys();
+
   const fresh = leads.filter(lead => {
     if (lead.email    && processed.has(lead.email.toLowerCase())) return false;
     if (lead.apolloId && processed.has(lead.apolloId))            return false;
@@ -46,8 +95,9 @@ export async function runPipeline() {
   // Fallback subject patterns → auto-reject; never send these to a prospect
   const FALLBACK_PATTERNS = ['wrong inbox', 'straight talk'];
 
-  const results     = { queued: 0, skipped: 0, held: 0, autoRejected: 0, failed: 0 };
+  const results     = { queued: 0, skipped: 0, held: 0, autoRejected: 0, companyDuped: 0, failed: 0 };
   const scoreLog    = [];
+  const passResults = []; // leads that cleared all inline gates; deduped + enqueued below
   const scrapeStats = { ok: 0, empty: 0, timeout: 0, blocked: 0, netErr: 0, noUrl: 0 };
 
   await runConcurrent(fresh, CONCURRENCY, async (lead) => {
@@ -122,15 +172,57 @@ export async function runPipeline() {
         return;
       }
 
-      const entry = await enqueue(normalized, draft);
-      scoreLog.push({ lead: normalized, fit, status: 'PASS', meta });
-      console.log(`  Queued ${entry.id} — "${draft.subject}"`);
-      results.queued++;
+      // Collect — company dedup + domain check happen after the concurrent phase
+      const scoreEntry = { lead: normalized, fit, status: 'PASS', meta };
+      scoreLog.push(scoreEntry);
+      passResults.push({ lead: normalized, draft, scoreEntry });
     } catch (err) {
       console.error(`  Lead failed (${lead.email ?? 'no email'}): ${err.message}`);
       results.failed++;
     }
   });
+
+  // ── Gate 4: company-level dedup ─────────────────────────────────────────
+  // Step A: drop any company already present in the queue from a prior run
+  const batchLeads = passResults.filter(r => {
+    const key = normalizeCompanyKey(r.lead.companyName ?? '');
+    if (key && queuedCompanies.has(key)) {
+      r.scoreEntry.status = 'DUPE';
+      results.companyDuped++;
+      return false;
+    }
+    return true;
+  });
+
+  // Step B: within this batch, keep only the highest-seniority contact per company
+  const companyBest = new Map(); // normalizedKey → passResult
+  for (const r of batchLeads) {
+    const key = normalizeCompanyKey(r.lead.companyName ?? '') || r.lead.apolloId;
+    const current = companyBest.get(key);
+    if (!current || seniorityScore(r.lead) > seniorityScore(current.lead)) {
+      if (current) {
+        current.scoreEntry.status = 'DUPE';
+        results.companyDuped++;
+      }
+      companyBest.set(key, r);
+    } else {
+      r.scoreEntry.status = 'DUPE';
+      results.companyDuped++;
+    }
+  }
+
+  // Step C: enqueue winners, attaching any data-integrity flags
+  for (const { lead, draft, scoreEntry } of companyBest.values()) {
+    const flags = [];
+    const mismatch = detectDomainMismatch(lead);
+    if (mismatch) {
+      flags.push(mismatch);
+      console.log(`  [!] Domain mismatch — ${lead.companyName} (${lead.email}): email domain "${mismatch.emailDomain}" ≠ site domain "${mismatch.siteDomain}"`);
+    }
+    const entry = await enqueue(lead, draft, flags);
+    console.log(`  Queued ${entry.id} — "${draft.subject}"${flags.length ? ' ⚠ domain flag' : ''}`);
+    results.queued++;
+  }
 
   // ── Score table ─────────────────────────────────────────────────────────
   const sorted = scoreLog.sort((a, b) => (b.fit?.total ?? -1) - (a.fit?.total ?? -1));
@@ -148,7 +240,7 @@ export async function runPipeline() {
     `${scrapeStats.timeout} timeout, ${scrapeStats.blocked} blocked, ` +
     `${scrapeStats.netErr} net-err, ${scrapeStats.noUrl} no URL`
   );
-  console.log(`Pipeline complete — queued: ${results.queued}, skipped: ${results.skipped}, held: ${results.held}, auto-rejected: ${results.autoRejected}, failed: ${results.failed}`);
+  console.log(`Pipeline complete — queued: ${results.queued}, company-duped: ${results.companyDuped}, skipped: ${results.skipped}, held: ${results.held}, auto-rejected: ${results.autoRejected}, failed: ${results.failed}`);
   return results;
 }
 
