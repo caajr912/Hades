@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cron from 'node-cron';
-import { runPipeline, sendApprovedLead } from './pipeline.js';
+import { runPipeline, sendApprovedLead, recomposePending } from './pipeline.js';
 import { listQueue, reviewEntry } from './queue.js';
 
 const app = express();
@@ -37,6 +37,18 @@ app.post('/queue/:id/approve', async (req, res) => {
     res.json({ status: 'approved', id: entry.id, email: entry.lead.email });
   } catch (err) {
     console.error('Approve error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /queue/recompose — regenerate all pending drafts against the current brand.js
+// Safe to run after editing config/brand.js; does not re-score or re-gate.
+app.post('/queue/recompose', async (req, res) => {
+  try {
+    const result = await recomposePending();
+    res.json(result);
+  } catch (err) {
+    console.error('Recompose error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -215,6 +215,20 @@ export async function enqueue(lead, draft, flags = []) {
 }
 
 /**
+ * Replace the draft on an existing queue entry.
+ * Sets recomposedAt so reviewers know the copy was regenerated.
+ */
+export async function updateDraft(id, draft) {
+  const entries = await readQueue();
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx === -1) return null;
+  entries[idx].draft        = draft;
+  entries[idx].recomposedAt = new Date().toISOString();
+  await writeQueue(entries);
+  return entries[idx];
+}
+
+/**
  * List queue entries, optionally filtered by status.
  * @param {string|null} status  'pending' | 'approved' | 'rejected' | null (all)
  */

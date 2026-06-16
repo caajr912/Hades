@@ -3,7 +3,7 @@ import { normalizeClayRow } from './clay.js';
 import { scrapeCompany, extractLeadFields } from './enrich.js';
 import { scoreLead, formatScoreRow, couldPassWithBetterData, isEnrichmentComplete } from './qualify.js';
 import { composeDraft } from './compose.js';
-import { enqueue, enqueueHold, enqueueRejected, getProcessedKeys, getQueuedCompanyKeys, normalizeCompanyKey, deduplicateQueueByCompany, backfillFlags } from './queue.js';
+import { enqueue, enqueueHold, enqueueRejected, getProcessedKeys, getQueuedCompanyKeys, normalizeCompanyKey, deduplicateQueueByCompany, backfillFlags, listQueue, updateDraft } from './queue.js';
 import { InstantlyManager } from './instantly.js';
 
 const CONCURRENCY = 5;
@@ -55,7 +55,7 @@ function detectDomainMismatch(lead) {
  */
 export async function runPipeline() {
   const maxPages     = parseInt(process.env.APOLLO_MAX_PAGES  ?? '5', 10);
-  const threshold    = parseInt(process.env.FIT_THRESHOLD     ?? '6', 10);
+  const threshold    = parseInt(process.env.FIT_THRESHOLD     ?? '8', 10); // scale 0–12 with prestige
 
   const cleaned  = await deduplicateQueueByCompany(seniorityScore);
   if (cleaned > 0) console.log(`Pipeline: cleaned ${cleaned} company-duplicate entry(s) from queue.`);
@@ -260,6 +260,37 @@ export async function sendApprovedLead(entry) {
   if (process.env.HUBSPOT_PRIVATE_APP_TOKEN) {
     await upsertHubSpotContact(lead);
   }
+}
+
+/**
+ * Regenerate email drafts for all pending queue entries using the current brand
+ * profile. Use this after updating config/brand.js to preview the new voice on
+ * the existing queue without running a fresh Apollo pull.
+ *
+ * Does NOT re-score or re-gate — only the draft copy is replaced.
+ * Sets recomposedAt on each entry so reviewers know the copy was regenerated.
+ *
+ * @returns {{ recomposed: number, failed: number }}
+ */
+export async function recomposePending() {
+  const entries = await listQueue('pending');
+  console.log(`Recomposing ${entries.length} pending entries...`);
+
+  let recomposed = 0, failed = 0;
+  for (const entry of entries) {
+    try {
+      const draft = await composeDraft(entry.lead);
+      await updateDraft(entry.id, draft);
+      console.log(`  OK  ${entry.id.slice(0, 8)} — "${draft.subject}" (${entry.lead.companyName})`);
+      recomposed++;
+    } catch (err) {
+      console.error(`  ERR ${entry.id.slice(0, 8)} (${entry.lead.companyName}): ${err.message}`);
+      failed++;
+    }
+  }
+
+  console.log(`Recompose complete — ${recomposed} updated, ${failed} failed`);
+  return { recomposed, failed };
 }
 
 async function upsertHubSpotContact(_lead) {

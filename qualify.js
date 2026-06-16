@@ -1,14 +1,17 @@
 /**
  * qualify.js — lead fit scoring for Elite Compass advertiser targeting.
  *
- * Scores each enriched lead 0–10 across four dimensions.
- * Only leads at or above FIT_THRESHOLD (env var, default 6) proceed to compose.
+ * Scores each enriched lead 0–12 across five dimensions.
+ * Only leads at or above FIT_THRESHOLD (env var, default 8) proceed to compose.
  *
  * Dimensions:
  *   vertical   (0–4)  what the business does — guide/lodge, species, gear
  *   audience   (0–3)  customer overlap with Elite Compass readers
  *   dataDepth  (0–2)  enough enrichment signal to write a specific email
  *   commercial (0–1)  viable advertiser (not a nonprofit / association / HQ entity)
+ *   prestige   (0–2)  destination/trophy tier — prioritizes international outfitters,
+ *                     multi-continent operations, and established premium brands over
+ *                     tiny single-location shops
  */
 
 // ── Keyword lists ─────────────────────────────────────────────────────────────
@@ -71,6 +74,30 @@ const AUDIENCE = [
   'serious hunter', 'serious angler', 'avid hunter', 'avid angler',
   'hardcore', 'trophy', 'conservation', 'wildlife', 'wild game',
   'outdoor enthusiast', 'outdoor lifestyle'
+];
+
+// Destination / international / trophy-record signals → prestige 2
+const PRESTIGE_HIGH = [
+  'international', 'international hunt', 'international outfitter', 'international fishing',
+  'africa', 'kenya', 'tanzania', 'namibia', 'zimbabwe', 'south africa hunt',
+  'new zealand', 'patagonia', 'argentina', 'chile hunt',
+  'safari', 'african safari', 'safari hunt',
+  'alaska lodge', 'alaska outfitter', 'alaska charter', 'alaska fishing lodge',
+  'yukon', 'northwest territories', 'british columbia outfitter',
+  'grand slam', 'world record', 'record book entry',
+  'boone and crockett', 'pope and young', 'safari club',
+  'destination lodge', 'destination hunt', 'destination fishing', 'destination outfitter',
+  'worldwide booking', 'worldwide clients', 'global outfitter', 'multiple continents'
+];
+
+// Established premium / private-access signals → prestige 1
+const PRESTIGE_LOW = [
+  'luxury lodge', 'luxury ranch', 'luxury outfitter', 'ultra-premium',
+  'private ranch', 'private lodge', 'private hunting club', 'private fishing club',
+  'exclusive lodge', 'exclusive access', 'exclusive membership',
+  'corporate hunt', 'corporate fishing', 'executive retreat',
+  'invitation only', 'by invitation', 'by appointment only', 'members only',
+  'nationally recognized', 'award-winning outfitter', 'nationally known'
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -193,18 +220,38 @@ export function scoreLead(lead) {
                          '501(c)', 'government', 'municipal', 'university', 'college'];
   const commercial    = nonCommercial.some(kw => nameAndDesc.includes(kw)) ? 0 : 1;
 
-  const total = vertical + audience + dataDepth + commercial;
+  // ── Prestige / tier (0–2): destination, international, trophy-record ops ──
+  // Rewards the caliber of operation the $2.5M+ readership actually books with.
+  // Single-location local shops score 0 here and must clear the gate on the
+  // other four dimensions alone.
+  const prestigeHighMatches = matchList(text, PRESTIGE_HIGH);
+  const prestigeLowMatches  = matchList(text, PRESTIGE_LOW);
+
+  let prestige = 0;
+  if (prestigeHighMatches.length > 0) {
+    prestige = 2;
+  } else if (prestigeLowMatches.length > 0) {
+    prestige = 1;
+  } else {
+    // Years-in-business bonus: 20+ year operations have earned premium positioning
+    const founded = parseInt(lead.companyFoundedYear ?? '', 10);
+    if (!isNaN(founded) && (2026 - founded) >= 20) prestige = 1;
+  }
+
+  const total = vertical + audience + dataDepth + commercial + prestige;
 
   const matched = [...new Set([
     ...guideLodgeMatches,
     ...speciesMatches,
     ...gearMatches,
-    ...audienceMatches
-  ])].slice(0, 5);
+    ...audienceMatches,
+    ...prestigeHighMatches,
+    ...prestigeLowMatches
+  ])].slice(0, 6);
 
   return {
     total,
-    breakdown: { vertical, audience, dataDepth, commercial },
+    breakdown: { vertical, audience, dataDepth, commercial, prestige },
     matched,
     richFields
   };
@@ -229,8 +276,8 @@ export function formatScoreRow(lead, fit, status, meta = {}) {
   const label = ({ PASS: 'PASS', HOLD: 'HOLD', RJCT: 'RJCT', DUPE: 'DUPE' })[status] ?? 'SKIP';
 
   const scoreStr = fit
-    ? `${fit.total}/10 [V:${fit.breakdown.vertical} A:${fit.breakdown.audience} D:${fit.breakdown.dataDepth} C:${fit.breakdown.commercial}]`
-    : `-- /10 [not scored]            `;
+    ? `${fit.total}/12 [V:${fit.breakdown.vertical} A:${fit.breakdown.audience} D:${fit.breakdown.dataDepth} C:${fit.breakdown.commercial} P:${fit.breakdown.prestige}]`
+    : `-- /12 [not scored]              `;
 
   const kws  = fit?.matched.length ? fit.matched.join(', ') : '';
   const name = (lead.companyName ?? lead.email ?? '?').slice(0, 28).padEnd(28);
