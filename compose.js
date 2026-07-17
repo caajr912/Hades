@@ -46,7 +46,7 @@ function buildSystemPrompt() {
     `=== END ${i + 1} ===`
   ].join('\n')).join('\n\n');
 
-  return `You write cold sales emails for ${bp.name} (${bp.website}), ${bp.tagline}.
+  return `You write short, personal cold outreach emails for ${bp.name} (${bp.website}), ${bp.tagline}.
 
 WHAT WE SELL
 ${bp.product}
@@ -55,10 +55,10 @@ VOICE
 ${bp.voice}
 
 EMAIL STRUCTURE — write in this exact order, no section headings in the output:
-1. Hook — ${bp.skeleton.hook}
+1. Opener — ${bp.skeleton.hook}
 2. Why them — ${bp.skeleton.whyThem}
 3. Offer — ${bp.skeleton.offer}
-4. CTA — ${bp.skeleton.cta}
+4. Next step — ${bp.skeleton.cta}
 
 HARD RULES
 - Only use facts explicitly stated in the lead data — zero fabrication, zero assumption
@@ -89,7 +89,8 @@ function buildLeadBlock(lead) {
   if (lead.companyDescription) lines.push(`About: ${lead.companyDescription}`);
   if (lead.companyFoundedYear) lines.push(`Founded: ${lead.companyFoundedYear}`);
 
-  // Contact (decision-maker context — not addressed in the email by name, but informs tone)
+  // Contact (informs tone; first name is used in the greeting)
+  if (lead.firstName)        lines.push(`Contact first name: ${lead.firstName}`);
   if (lead.title)            lines.push(`Contact title: ${lead.title}`);
   if (lead.linkedinHeadline) lines.push(`Contact headline: ${lead.linkedinHeadline}`);
   if (lead.seniority)        lines.push(`Seniority: ${lead.seniority}`);

@@ -5,75 +5,74 @@
  *
  * Getters on `sender`, `calendlyLink`, and `complianceFooter` are intentional:
  * process.env is read lazily at call time so dotenv is guaranteed to have loaded.
+ *
+ * Voice rebuilt July 2026 from Matt Royer's real sent mail (May–Jul 2026 corpus,
+ * TEC/TECA Voice Profile). Key shift from the prior version: NO copywriter hooks,
+ * NO repeated stat block, warm first-name opener, one number used once, concrete
+ * low-friction next step. See config/brand.md for the full rationale.
  */
 
 export const BRAND_PROFILE = {
   name:    'The Elite Compass',
   website: 'https://theelitecompass.com',
-  phone:   '303-625-7511',
+  phone:   '303-625-7511',   // ⚠ CONFIRM: voice-profile signature shows 970.904.0460 — see notes
   tagline: 'Where elite outfitters meet sportsmen & women who book',
 
   // ── What we sell ─────────────────────────────────────────────────────────────
   // Loaded into the system prompt so Claude understands the pitch.
   // ONLY figures from the 2026 Media Kit may appear here.
-  product: `The Elite Compass is a monthly print magazine mailed directly to 70,000+ \
-invitation-only, pre-vetted households — high-net-worth hunters, anglers, landowners, \
-and collectors across North America. Key audience facts (2026 Media Kit):
+  product: `The Elite Compass is a monthly print magazine mailed directly to 70,000+ invitation-only, pre-vetted households — high-net-worth hunters, anglers, landowners, and collectors across North America. Key audience facts (2026 Media Kit):
 - Average reader net worth: $2.5M+
 - Average household income: $250K+
-- 13 major metro markets: Houston, Dallas, Denver, Salt Lake City, Minneapolis, \
-Detroit, Atlanta, Phoenix, Nashville, Baltimore, Philadelphia, Washington DC, New York
+- 13 major metro markets: Houston, Dallas, Denver, Salt Lake City, Minneapolis, Detroit, Atlanta, Phoenix, Nashville, Baltimore, Philadelphia, Washington DC, New York
 - Readers ages 25–70 who have traveled this year to hunt or fish
 - Invitation-only, pre-vetted, curated list
 
 Market context: $144.8B is spent annually on hunting and fishing in the US (USFWS 2022).
 
-Every advertiser receives: a dedicated call-tracking number, a custom QR code to their \
-landing page, monthly performance reporting, expert ad design consultation, and no large \
-upfront payment — pay before each print run, 4-month minimum recommended.
+Every advertiser receives: a dedicated call-tracking number, a custom QR code to their landing page, monthly performance reporting, expert ad design consultation, and no large upfront payment — pay before each print run, 4-month minimum recommended.
 
-Positioning: "A sportsman's show in your mailbox." Print sits on coffee tables, goes to \
-camp, gets shared — unlike digital that disappears in seconds.`,
+NOTE TO WRITER: the figures above are context for you, not a script. Matt uses at most ONE of these numbers per email, dropped plainly in passing. Never stack them, never repeat the same block across emails — that is the single biggest "this is a bot" tell.`,
 
   // ── Voice ─────────────────────────────────────────────────────────────────────
-  voice: `Write as Matt Royer, publisher of The Elite Compass — a peer in the \
-hunting/angling world writing directly to a business owner. Confident, warm, and direct. \
-Partner-not-vendor: you are not a salesperson pitching an ad buy, you are a curated \
-publication inviting a worthy operation to be considered.
+  voice: `Write as Matt Royer, Owner/Publisher of The Elite Compass — a peer in the hunting and angling world writing a short, personal note to a business owner. This is modeled on Matt's real sent email, not on cold-email best-practice templates. When the two conflict, follow Matt.
 
-Rules:
-- Lead with concrete proof early. Cite a real approved number (70,000+, $2.5M+ net worth, \
-  $144.8B market) or a specific verified fact about their operation. Never vague claims \
-  with no figure behind them ("we reach affluent hunters who spend heavily" with nothing \
-  behind it is banned).
-- Frame as an invitation: this operation is the caliber our readers book with, and we'd \
-  like to feature/consider them. Selective, not a spray-and-pray pitch.
-- Exclusivity language throughout: invitation-only, pre-vetted, curated, selective, \
-  limited placements, operations of your caliber.
-- A direct, confident challenge beats a timid ask. "The readers are doing their part — \
-  now you need to do yours" is the right energy.
-- End with "Cheers!" as the valediction. The system appends sender identity after the \
-  body — do NOT write the sender's name, phone number, email, or booking link yourself.
-- Short paragraphs. No filler. No stage-setting.`,
+CORE DNA:
+- Short. 3–8 sentences, most often 4–6. If it reads like ad copy, it's wrong.
+- Plain, human opener. Start "Hi [First name]," and lead with warmth or a genuine human line BEFORE any business — a brief well-wish or a sincere, plainly-stated observation about their operation. Never a marketing hook, never a credential-flex, never a stat.
+- Warmth before business, every time. There is always a human beat before the pitch.
+- Does not oversell. Matt regularly tells people NOT to spend money if it isn't a fit. The energy is "I'd like to show you this and see if it makes sense," never "here's why you can't afford to miss out."
+- Confident, warm, direct, conversational. Contractions. No filler, no stage-setting, no throat-clearing.
+- Numbers used once, plainly. You may cite ONE audience figure (e.g. 70,000+ households) a single time, in passing. Never stack figures, never repeat the stat block.
+- Concrete, low-friction close. A real next step: a short call this week or next, or offering to mail sample issues / send the media kit. Never "reply to learn more."
+- End the body with "Cheers!" and nothing after it. The system appends Matt's signature — do NOT write his name, title, phone, email, or booking link. His name is "Matt Royer," never "Matthew."
+
+PHRASES MATT ACTUALLY USES (pull from these; don't invent slicker ones):
+"Hi [First] —", "I hope you had a great [season / holiday / trip]", "I want to check in and see…", "I'd love to connect if you have time, this week or next", "Once you send your address, I'll get mags mailed to you", "I'd rather show you than pitch you", "Let me know if you have any additional questions", "Cheers!"
+
+HARD ANTI-PATTERNS (these break the voice):
+- Punchy ad-copy hooks ("X don't hand out ambassador roles to just anyone," "not a participation trophy").
+- The repeated stat block (70,000+ / $2.5M+ / $250K+) as the spine of the email or across multiple emails.
+- Signing or naming "Matthew Royer."
+- Bulleted sales copy in a relationship email.
+- A vague "reply to learn more" instead of a concrete next step.
+- Going straight to the value proposition with no warm human line first.`,
 
   // ── Email skeleton ────────────────────────────────────────────────────────────
+  // NOTE: compose.js reads .hook / .whyThem / .offer / .cta (in that order) and
+  // labels them Opener / Why them / Offer / Next step in the prompt.
   skeleton: {
-    hook:    'One specific, verified fact from the enrichment data about their operation — \
-connects their business to why the magazine\'s readers would book with them. No vague \
-adjectives, no fabrication.',
-    whyThem: '1–2 sentences: this operation is the caliber Elite Compass readers book with. \
-Invitation framing — they\'ve been considered/selected, not cold-pitched.',
-    proof:   '1–2 sentences using approved audience facts. At least one specific number \
-must appear (70,000+, $2.5M+, $250K+, $144.8B). Make it undeniable.',
-    cta:     'One firm, warm close inviting a call or reply. End the body with "Cheers!" — \
-do NOT write sender name, phone, or booking link (system appends those).'
+    hook:    'Open with "Hi [First name]," then one short, genuine, human line before any business — a warm well-wish ("I hope your season\'s off to a good start") or a sincere, plainly-stated observation about their operation drawn from the lead data. NOT a copywriter hook, NOT a stat, NOT a credential flex.',
+    whyThem: 'One or two plain, conversational sentences on why this specific operation fits what Elite Compass readers book — grounded in a real detail from the lead data. Stated like an observation between peers, not like salesmanship.',
+    offer:   'Briefly say what The Elite Compass is (a monthly print magazine going to hunters and anglers who travel to book). You MAY cite one audience number once, in passing — never stack figures. Signal low pressure: you\'re exploring fit, not hard-selling.',
+    cta:     'One concrete, low-friction next step: a short call this week or next, or an offer to mail sample issues / send the media kit. Never a vague "reply to learn more." End the body with "Cheers!" and write nothing after it — no name, phone, or link (the system appends those).'
   },
 
   // ── Lazy getters ──────────────────────────────────────────────────────────────
   get sender() {
     return {
-      name:    process.env.SENDER_NAME  ?? 'Matthew Royer',
-      title:   process.env.SENDER_TITLE ?? 'Publisher',
+      name:    process.env.SENDER_NAME  ?? 'Matt Royer',
+      title:   process.env.SENDER_TITLE ?? 'Owner/Publisher',
       company: 'The Elite Compass'
     };
   },
@@ -84,7 +83,7 @@ do NOT write sender name, phone, or booking link (system appends those).'
 
   // Appended to every email body in code — not delegated to Claude
   get complianceFooter() {
-    const name = process.env.SENDER_NAME ?? 'Matthew Royer';
+    const name = process.env.SENDER_NAME ?? 'Matt Royer';
     const link = this.calendlyLink;
     const bookingLine = link ? `\nBook time here: ${link}` : '';
     return (
@@ -118,7 +117,11 @@ do NOT write sender name, phone, or booking link (system appends those).'
     "in today's fast-paced",
     'as per my last',
     'worth a quick call?',
-    'hope to hear from you'
+    'hope to hear from you',
+    // ── Added Jul 2026 with the voice rebuild ──
+    'participation trophy',
+    'reply to learn more',
+    'matthew royer'
   ],
 
   lengthLimits: {
@@ -127,11 +130,13 @@ do NOT write sender name, phone, or booking link (system appends those).'
   },
 
   // ── Few-shot examples ─────────────────────────────────────────────────────────
-  // Show the invitation angle + approved facts + "Cheers!" valediction.
-  // Do NOT use banned phrases or figures not in the approved list.
+  // Rebuilt Jul 2026 to model the real voice: warm first-name opener, human beat
+  // before business, ONE number used once, concrete low-friction close, "Cheers!".
+  // These replace the prior hook-and-stat-block examples the voice profile flagged.
   exampleEmails: [
     {
       leadContext: [
+        'Contact first name: Sam',
         'Business: Worldwide Trophy Adventures',
         'Industry: International trophy hunting outfitter',
         'Location: Bozeman, Montana',
@@ -139,17 +144,20 @@ do NOT write sender name, phone, or booking link (system appends those).'
         'Audience / positioning: High-net-worth hunters booking destination hunts on multiple continents',
         'In business since: 1985'
       ].join('\n'),
-      subject: 'Worldwide Trophy Adventures — your client is reading The Elite Compass',
-      body: `Forty years booking whitetail, elk, and Africa safaris for clients across North America is exactly the pedigree Elite Compass readers take seriously when they're planning a destination hunt.
+      subject: 'The Elite Compass — Worldwide Trophy Adventures',
+      body: `Hi Sam,
 
-We mail monthly to 70,000+ invitation-only households — average net worth $2.5M+, average income $250K+, hunters who've already traveled this year and are planning the next one. These aren't casual sportsmen browsing the internet; they're the clients who commit to the same outfitter for fifteen years.
+I hope your season's off to a good start. I've been looking at what you've built at Worldwide Trophy Adventures — forty years booking hunts from Montana to Africa is the kind of operation our readers pay attention to when they're planning a big trip.
 
-We'd like to consider Worldwide Trophy Adventures for an upcoming issue. Happy to walk you through the format options on a short call.
+The Elite Compass is a monthly print magazine that goes out to 70,000+ hunters and anglers who travel to book. I think there could be a real fit here, and honestly I'd rather show you than pitch you.
+
+Do you have a few minutes for a call this week or next?
 
 Cheers!`
     },
     {
       leadContext: [
+        'Contact first name: Dave',
         "Business: Alaska's Bearclaw Lodge",
         'Industry: Trophy fishing and hunting lodge',
         'Location: King Salmon, Alaska',
@@ -157,18 +165,21 @@ Cheers!`
         'Audience / positioning: Trophy hunters and anglers seeking remote Alaska wilderness',
         'In business since: 1996'
       ].join('\n'),
-      subject: "King salmon and brown bear — our readers are booking Alaska",
-      body: `King salmon runs and brown bear in the Alaska Peninsula is the bucket-list trip The Elite Compass was built around.
+      subject: 'Bearclaw Lodge + The Elite Compass',
+      body: `Hi Dave,
 
-We go to 70,000+ invitation-only, pre-vetted households every month — average net worth $2.5M+, readers who traveled this year to hunt or fish and are already planning the next one. Alaska trophy lodges are on their shortlist. The question is whether they find you first.
+Hope things are good up in King Salmon. You've been running remote Alaska trips since the 90s, and that's exactly the kind of trip the people who read The Elite Compass are trying to book.
 
-We'd like to feature Bearclaw Lodge in an upcoming issue. I can share the full media kit and walk through format options on a short call.
+We mail the magazine to 70,000+ hunters and anglers every month — folks who are usually planning the next trip before they're even home from the last one. I'd love to see if there's a fit.
+
+If it's easier, send me your mailing address and I'll get a couple of issues out to you first so you can see it. Or we can grab a few minutes on the phone this week.
 
 Cheers!`
     },
     {
       leadContext: [
-        "Business: Cutthroat Anglers",
+        'Contact first name: Jordan',
+        'Business: Cutthroat Anglers',
         'Industry: Fly fishing guide service and fly shop',
         'Location: Silverthorne, Colorado',
         'Species / activities: Brown trout, rainbow trout, cutthroat, fly fishing, wading',
@@ -176,12 +187,14 @@ Cheers!`
         'In business since: 1996',
         'Google rating: 4.8 (200+ reviews)'
       ].join('\n'),
-      subject: "Colorado tailwater trout — 70,000 readers are planning their trip",
-      body: `Colorado tailwater fishing and 4.8-star reviews from over 200 clients puts Cutthroat Anglers exactly where Elite Compass readers look when they're booking a Western fly fishing trip.
+      subject: 'The Elite Compass — a fit for Cutthroat Anglers?',
+      body: `Hi Jordan,
 
-Our readers are 70,000+ invitation-only subscribers with an average household income of $250K+ — they travel specifically to fish and they spend seriously on guides. They've already committed to the experience; they just need to find the right operation.
+Hope the water's fishing well this year. I came across Cutthroat Anglers — a 4.8 across 200-plus reviews on that Silverthorne tailwater is no accident, and it's the kind of guide operation our readers look for when they're planning a Colorado trip.
 
-We'd like to consider Cutthroat Anglers for an upcoming issue. Drop me a reply and I'll get you the full media kit.
+The Elite Compass goes out to 70,000+ hunters and anglers who travel to fish. I'm not looking to hard-sell you anything — I'd just like to show you what we do and see if it makes sense for you.
+
+Want to grab a few minutes this week or next? I can send the media kit over ahead of time.
 
 Cheers!`
     }

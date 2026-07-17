@@ -36,43 +36,58 @@ and established brands; a tiny single-location rental shop is a weaker fit.
 
 ---
 
-## Voice & tone (from Matt's real emails)
+## Voice & tone (from Matt's real sent mail, May–Jul 2026)
 
-- **Confident, partner-not-vendor.** "We are your partners in this — not just your
-  publisher." Write like a peer who can help them book clients, not a salesperson.
-- **Lead with concrete proof, not vague adjectives.** Cite a real approved number
-  (distribution, net worth, market size) early. Never "we reach affluent hunters who
-  spend heavily" with nothing behind it.
-- **A little direct / provocative is good.** Matt writes lines like "The readers are
-  doing their part — now you need to do yours." A confident challenge beats a timid
-  ask. Drop "worth a quick call?" as a closer — it's weak.
-- **Exclusivity language throughout:** curated, invitation-only, pre-vetted,
-  selective, limited placements, operations of your caliber.
-- **Warm, human sign-off.** Matt uses "Cheers!" and "Let's get to work." Real person,
-  real phone number. Not corporate.
-- **Tight.** Short paragraphs, no filler, no "I hope this email finds you well,"
-  no "in today's fast-paced market."
+> Rebuilt Jul 2026 from a review of Matt's actual sent emails. This **replaces** the
+> earlier hook-and-proof, provocative-challenge guidance — that version produced copy
+> that read as a bot. When "good cold-email practice" and Matt's real habits conflict,
+> follow Matt.
+
+- **Short.** 3–8 sentences, most often 4–6. If it reads like ad copy, it's wrong.
+- **Plain, human opener.** Start "Hi [First name]," and lead with warmth or a genuine
+  human line *before* any business — a brief well-wish or a sincere, plainly-stated
+  observation about their operation. Never a marketing hook, never a credential-flex,
+  never a stat as the opener.
+- **Warmth before business, every time.** There is always a human beat before the pitch.
+- **Doesn't oversell.** Matt regularly tells people *not* to spend money if it isn't a
+  fit. Energy is "I'd like to show you this and see if it makes sense," never "here's
+  why you can't afford to miss out."
+- **Numbers used once, plainly.** One audience figure (e.g. 70,000+ households) a single
+  time, in passing. **Never** stack figures or repeat the stat block — that's the single
+  biggest "this is a bot" tell, especially across multiple emails to different prospects.
+- **Concrete, low-friction close.** A real next step: a short call this week or next, or
+  offering to mail sample issues / send the media kit. Never "reply to learn more."
+- **Sign-off.** End the body with "Cheers!" and nothing after it — the system appends the
+  signature. Name is **"Matt Royer," never "Matthew."**
+- **No** "I hope this email finds you well," no "in today's fast-paced market," no
+  bulleted sales copy in a relationship email.
+
+**Phrases Matt actually uses** (pull from these, don't invent slicker ones): "I hope you
+had a great [season/holiday/trip]," "I want to check in and see…," "I'd love to connect
+if you have time, this week or next," "Once you send your address, I'll get mags mailed
+to you," "I'd rather show you than pitch you," "Let me know if you have any additional
+questions," "Cheers!"
 
 ---
 
 ## Email structure
 
-**Primary cold-open angle: the invitation.** Lead by inviting the operation to be
-*considered/selected* for a feature or placement in an upcoming issue — framed as
-recognition of a quality operation, not a sales pitch. This matches the brand's
-invitation-only positioning and reads far better cold than "buy an ad."
-
-> NOTE — confirm with Matt before going live: soft invitation angle (recommended) vs.
-> direct placement pitch. Default to the invitation angle unless told otherwise.
+**Primary cold-open angle: a short, personal note between peers.** Not "buy an ad," not
+a polished invitation pitch — a plain, warm message that opens like Matt actually writes,
+gets to a genuine reason there might be a fit, and asks for a low-friction next step.
 
 Rough shape (write fresh prose per lead, do not template):
-1. **Hook** — one specific, true detail about *their* operation (from enrichment).
-2. **The invitation / why them** — they're the caliber of operation the readership
-   books with.
-3. **The proof** — one or two approved facts that make the readership undeniable.
-4. **Soft, confident CTA** — point to a quick call via the booking link.
+1. **Opener** — "Hi [First name]," plus one genuine human line: a warm well-wish or a
+   plainly-stated observation about their operation. No hook, no stat, no flex.
+2. **Why them** — one or two conversational sentences on why this specific operation fits
+   what the readership books, grounded in a real detail about them.
+3. **What it is** — briefly, what The Elite Compass is. One audience number, once, in
+   passing — optional, not required. Signal low pressure.
+4. **Next step** — a concrete, low-friction ask: a short call this week or next, or an
+   offer to mail sample issues / send the media kit.
 
-Subject line: specific to the operation, never generic. Max ~75 characters.
+Subject line: plain and specific to the operation, understated over punchy. Max ~75
+characters.
 
 ---
 
