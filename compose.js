@@ -5,6 +5,47 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = 'claude-sonnet-4-6';
 
 /**
+ * Deterministic per-lead style assignment.
+ *
+ * Each email is composed by an independent, stateless model call that cannot see
+ * the other emails in a batch — so an instruction to "vary across emails" is
+ * impossible to honor and the model converges on one pattern. Instead we hash the
+ * lead's email to pick ONE opener, ONE close, and ONE subject format from
+ * BRAND_PROFILE.styleVariants, and inject them as a STYLE block. Same lead always
+ * maps to the same style (stable across recompose runs); across a batch the styles
+ * spread. xmur3 gives good low-bit distribution so successive picks are independent.
+ */
+function xmur3(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return function () {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^= h >>> 16) >>> 0;
+  };
+}
+
+function styleDirective(lead) {
+  const sv = BRAND_PROFILE.styleVariants;
+  const company = lead.companyName ?? 'their operation';
+  const fill = (s) => s.replace(/\{company\}/gi, company);
+  const seed = String(lead.email || lead.apolloId || lead.companyName || Math.random());
+  const rand = xmur3(seed);
+  const opener  = fill(sv.openers[rand()       % sv.openers.length]);
+  const door    = fill(sv.audienceDoors[rand() % sv.audienceDoors.length]);
+  const close   = fill(sv.closes[rand()        % sv.closes.length]);
+  const subject = fill(sv.subjects[rand()      % sv.subjects.length]);
+  return `STYLE FOR THIS EMAIL — follow exactly; do not fall back to a stock opener, audience line, or close even if the examples suggest one:
+- OPENER: ${opener}
+- AUDIENCE DOOR: ${door}
+- THE ASK: ${close}
+- SUBJECT LINE: use exactly this — ${subject}`;
+}
+
+/**
  * Generate a full cold email (subject + body) for an enriched lead.
  *
  * Guardrails enforced in code after generation:
@@ -21,7 +62,7 @@ export async function composeDraft(lead) {
     model: MODEL,
     max_tokens: 1024,
     system: buildSystemPrompt(),
-    messages: [{ role: 'user', content: buildLeadBlock(lead) }]
+    messages: [{ role: 'user', content: `${buildLeadBlock(lead)}\n\n${styleDirective(lead)}` }]
   });
 
   const draft = parseResponse(msg.content[0].text);
@@ -56,9 +97,9 @@ ${bp.voice}
 
 EMAIL STRUCTURE — write in this exact order, no section headings in the output:
 1. Opener — ${bp.skeleton.hook}
-2. Why them — ${bp.skeleton.whyThem}
-3. Offer — ${bp.skeleton.offer}
-4. Next step — ${bp.skeleton.cta}
+2. Curiosity — ${bp.skeleton.whyThem}
+3. Audience door — ${bp.skeleton.offer}
+4. The ask — ${bp.skeleton.cta}
 
 HARD RULES
 - Only use facts explicitly stated in the lead data — zero fabrication, zero assumption
